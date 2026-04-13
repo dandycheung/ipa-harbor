@@ -197,12 +197,18 @@ Currently using `localhost:5173` to access. If you need to allow LAN IP:5173 acc
 
 #### Build
 
-Here use a script to download the latest image
+##### Option 1
+```bash
+chmod +x build.sh dl_latest.sh && ./build.sh
+```
+
+##### Option 2
+Download ipatool release assets with the helper script:
 ```bash
 chmod +x dl_latest.sh
 ```
 ```bash
-dl_latest.sh
+./dl_latest.sh
 ```
 After downloading, do not decompress the gz file or rename it. Dockerfile will handle it automatically.
 
@@ -429,18 +435,25 @@ pnpm dev
 目前都是使用 `localhost:5173` 进入，如果需要允许局域网 IP:5173 的形式, 需要在后端设置环境变量, 详细见 参数说明 `allowLAN`
 
 #### 构建
+##### 方法1
+执行 
+```bash
+chmod +x build_zh.sh dl_latest.sh && ./build_zh.sh
+```
 
+##### 方法2
 这里用脚本进行下载最新镜像
 ```bash
 chmod +x dl_latest.sh
 ```
+
 ```bash
 dl_latest.sh
 ```
 下载完毕后，文件不要对 gz 文件进行解压和修改文件名操作, Dockerfile 会自动处理
 
 构建镜像并加载本地镜像库
-```
+```bash
 docker build -t ipaharbor . --load
 ```
 

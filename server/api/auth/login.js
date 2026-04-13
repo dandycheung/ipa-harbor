@@ -73,7 +73,7 @@ async function loginHandler(req, res) {
             command += ` --auth-code "${twoFactor}"`;
         }
 
-        // console.log(`执行登录命令: ${command.replace(password, '***').replace(twoFactor || '', '***')}`);
+        console.log(`执行登录命令: ${command.replace(password, '***').replace(twoFactor || '', '***')}`);
 
         try {
             const result = await executeIpatool(command);
