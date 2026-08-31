@@ -1,7 +1,36 @@
+import Swal from 'sweetalert2';
+import i18n from '../i18n';
+
 const API_BASE_URL =
     import.meta.env.MODE === 'production' ?
         window.location.origin : // 生产环境使用当前域名
         import.meta.env.VITE_API_BASE_URL; // 开发环境使用VITE_API_BASE_URL
+
+/** 是否为 429 限流 */
+export function isRateLimitError(error) {
+    return error?.rateLimited === true;
+}
+
+function showRateLimitToast() {
+    Swal.fire({
+        icon: 'warning',
+        title: i18n.t('ui.tooManyRequests'),
+        position: 'top',
+        toast: true,
+        timer: 3000,
+        showConfirmButton: false,
+    });
+}
+
+async function parseResponseBody(response) {
+    const text = await response.text();
+    if (!text) return {};
+    try {
+        return JSON.parse(text);
+    } catch {
+        return null;
+    }
+}
 
 /**
  * @param {string} endpoint - API端点
@@ -30,13 +59,26 @@ export async function apiRequest(endpoint, options = {}) {
 
     try {
         const response = await fetch(url, finalOptions);
-        const data = await response.json();
 
-        // 特殊处理：需要二次验证的情况
-        if (!data.success && data.needsTwoFactor) {
-            const error = new Error(data.message || '需要二次验证码');
-            error.needsTwoFactor = true;
+        if (response.status === 429) {
+            showRateLimitToast();
+            const error = new Error(i18n.t('ui.tooManyRequests'));
+            error.rateLimited = true;
             throw error;
+        }
+
+        const data = await parseResponseBody(response);
+        if (data === null) {
+            throw new Error(`请求失败 (${response.status})`);
+        }
+
+        // 需要二次验证时直接返回，由登录页展示验证码输入框
+        if (!data.success && data.needsTwoFactor) {
+            return {
+                success: false,
+                needsTwoFactor: true,
+                message: data.message || '需要二次验证码',
+            };
         }
 
         // 如果请求成功但业务逻辑失败
@@ -57,6 +99,10 @@ export async function apiRequest(endpoint, options = {}) {
 
         return data;
     } catch (error) {
+        if (error.rateLimited) {
+            throw error;
+        }
+
         if (error.message.includes('Failed to fetch')) {
             const errorMessage = '网络连接失败，请检查服务器是否运行';
             throw new Error(errorMessage);
@@ -107,9 +153,22 @@ export async function login(email, password, twoFactor = null) {
  * @param {string} keyword - 搜索关键词
  * @param {number} limit - 搜索结果数量限制
  */
-export async function searchApps(keyword, limit = 5) {
+export async function searchApps(keyword, limit = 10) {
     const params = new URLSearchParams({ keyword, limit: limit.toString() });
     return apiRequest(`/v1/app/search?${params}`);
+}
+
+/**
+ * 获取已购项目列表
+ * @param {number} page - 页码，从 1 开始
+ * @param {number} maxResults - 每页数量，最大 100
+ */
+export async function listPurchases(page = 1, maxResults = 50) {
+    const params = new URLSearchParams({
+        page: page.toString(),
+        maxResults: maxResults.toString()
+    });
+    return apiRequest(`/v1/app/purchases?${params}`);
 }
 
 /**
@@ -128,8 +187,12 @@ export async function getAppDetails(ids) {
  * @param {number} id - 应用ID
  * @param {number} size - 图标尺寸，默认100 支持512
  */
-export function getAppIconUrl(id, size = 100) {
-    return `${API_BASE_URL}/v1/app/icon/${id}?size=${size}`;
+export function getAppIconUrl(id, size = 100, country) {
+    const params = new URLSearchParams({ size: String(size) });
+    if (country) {
+        params.set('country', country);
+    }
+    return `${API_BASE_URL}/v1/app/icon/${id}?${params}`;
 }
 
 /**
@@ -223,6 +286,13 @@ export function getAppDownloadPackageUrl(appId, versionId) {
  */
 export async function getAdminStatus() {
     return apiRequest('/v1/admin/status');
+}
+
+/**
+ * 检查 ipa-harbor 是否有新版本
+ */
+export async function checkAppUpdate() {
+    return apiRequest('/v1/admin/check-update');
 }
 
 /**

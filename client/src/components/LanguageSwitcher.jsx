@@ -1,11 +1,11 @@
 import React from 'react';
-import { IconButton, Dropdown, Menu, MenuItem, MenuButton, Select, Option } from '@mui/joy';
+import { IconButton, Dropdown, Menu, MenuItem, MenuButton, Select, Option, Stack, Button } from '@mui/joy';
 import { useTranslation } from 'react-i18next';
 import { languages, normalizeLanguageCode } from '../i18n';
 import TranslateIcon from '@mui/icons-material/Translate';
 /**
  * 语言切换
- * @param {string} variant - 'icon' 'select' 
+ * @param {string} variant - 'icon' | 'select' | 'buttons'
  * @param {string} size - 'sm', 'md', 'lg'
  * @param {boolean} fullWidth
  * @param {object} sx
@@ -38,9 +38,14 @@ export default function LanguageSwitcher({
                 onChange={handleChange}
                 size={size}
                 fullWidth={fullWidth}
+                slotProps={{
+                    listbox: {
+                        sx: { zIndex: 1400 },
+                    },
+                }}
                 sx={{
                     minWidth: 140,
-                    ...sx
+                    ...sx,
                 }}
             >
                 {languages.map((lang) => (
@@ -49,6 +54,25 @@ export default function LanguageSwitcher({
                     </Option>
                 ))}
             </Select>
+        );
+    }
+
+    if (variant === 'buttons') {
+        return (
+            <Stack direction="row" spacing={1} sx={{ width: fullWidth ? '100%' : 'auto', ...sx }}>
+                {languages.map((lang) => (
+                    <Button
+                        key={lang.code}
+                        variant={currentLanguage === lang.code ? 'solid' : 'outlined'}
+                        color={currentLanguage === lang.code ? 'primary' : 'neutral'}
+                        size={size}
+                        onClick={() => changeLanguage(lang.code)}
+                        sx={{ flex: fullWidth ? 1 : 'none', borderRadius: 'lg' }}
+                    >
+                        {lang.nativeName}
+                    </Button>
+                ))}
+            </Stack>
         );
     }
 

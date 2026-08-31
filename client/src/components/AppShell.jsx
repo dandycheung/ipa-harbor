@@ -1,35 +1,64 @@
-import React from 'react';
-import { Box, Stack, Typography, Sheet, Button, Badge, Divider, Chip, IconButton } from '@mui/joy';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { AddToHomeScreen as AddToHomeScreenIcon } from '@mui/icons-material';
+import React, { useEffect, useState } from 'react';
+import {
+    Box,
+    Stack,
+    Typography,
+    Sheet,
+    Button,
+    Badge,
+    IconButton,
+} from '@mui/joy';
+import { useNavigate, useLocation, useOutlet } from 'react-router-dom';
+import { AnimatePresence, motion } from 'motion/react';
+import {
+    AddToHomeScreen as AddToHomeScreenIcon,
+    Menu as MenuIcon,
+    Close as CloseIcon,
+} from '@mui/icons-material';
 import UserStatus from './UserStatus';
 import AdminStatus from './AdminStatus';
 import LanguageSwitcher from './LanguageSwitcher';
+import MobileNavMenu from './MobileNavMenu';
+import PageTransition from './PageTransition';
 import { useApp } from '../contexts/AppContext';
-import { useAdmin } from '../contexts/AdminContext';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import { useTranslation } from 'react-i18next';
 
-export default function AppShell({ children }) {
+export default function AppShell() {
     const { t } = useTranslation();
     const navigate = useNavigate();
     const location = useLocation();
-    const { taskList, user, isAuthenticated, loading, logout } = useApp();
-    const { isLoggedIn, user: adminUser, logout: adminLogout, getFormattedExpiresAt, isExpiringSoon } = useAdmin();
+    const outlet = useOutlet();
+    const { taskList, isAuthenticated } = useApp();
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [menuMounted, setMenuMounted] = useState(false);
+
+    useEffect(() => {
+        setMenuOpen(false);
+    }, [location.pathname]);
+
+    // 屏幕展开到 sm 及以上时自动折叠菜单
+    useEffect(() => {
+        const mediaQuery = window.matchMedia('(min-width: 600px)');
+
+        const handleChange = (event) => {
+            if (event.matches) {
+                setMenuOpen(false);
+            }
+        };
+
+        if (mediaQuery.matches) {
+            setMenuOpen(false);
+        }
+
+        mediaQuery.addEventListener('change', handleChange);
+        return () => mediaQuery.removeEventListener('change', handleChange);
+    }, []);
 
     const handleNavigate = (path) => {
         navigate(path);
+        setMenuOpen(false);
     };
-
-    // // 管理员退出登录
-    // const handleAdminLogout = async () => {
-    //     try {
-    //         await adminLogout();
-    //         navigate('/login');
-    //     } catch (error) {
-    //         console.error('退出系统失败:', error);
-    //     }
-    // };
 
     const getBadgeInfo = () => {
         if (!taskList) return { count: 0, color: 'neutral' };
@@ -39,7 +68,8 @@ export default function AppShell({ children }) {
 
         if (runningCount > 0) {
             return { count: runningCount, color: 'primary' };
-        } else if (completedCount > 0) {
+        }
+        if (completedCount > 0) {
             return { count: completedCount, color: 'neutral' };
         }
 
@@ -48,16 +78,48 @@ export default function AppShell({ children }) {
 
     const badgeInfo = getBadgeInfo();
 
+    const navItems = [
+        { path: '/', label: t('ui.home') },
+        { path: '/purchases', label: t('ui.purchasedApps') },
+        { path: '/dl', label: t('ui.downloadManager'), badge: badgeInfo },
+    ];
+
+    const renderNavButton = (item) => {
+        const isActive = location.pathname === item.path;
+        const button = (
+            <Button
+                variant={isActive ? 'soft' : 'plain'}
+                size="sm"
+                onClick={() => handleNavigate(item.path)}
+                color={isActive ? 'primary' : 'neutral'}
+            >
+                {item.label}
+            </Button>
+        );
+
+        if (item.badge?.count > 0) {
+            return (
+                <Badge badgeContent={item.badge.count} color={item.badge.color} size="sm" key={item.path}>
+                    {button}
+                </Badge>
+            );
+        }
+
+        return <Box key={item.path}>{button}</Box>;
+    };
+
     return (
-        <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+        <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {/* Header */}
             <Sheet
                 variant="outlined"
                 sx={{
+                    position: 'relative',
                     borderBottom: 1,
                     borderColor: 'divider',
                     p: 2,
-                    bgcolor: 'background.surface'
+                    bgcolor: 'background.surface',
+                    zIndex: menuOpen || menuMounted ? 1301 : 2,
                 }}
             >
                 <Stack
@@ -66,9 +128,8 @@ export default function AppShell({ children }) {
                     alignItems="center"
                     sx={{ maxWidth: '1200px', mx: 'auto', width: '100%' }}
                 >
-                    {/* 左侧标题 */}
                     <Stack direction="row" alignItems="center" gap={1}>
-                        <IconButton color="primary">
+                        <IconButton color="primary" onClick={() => handleNavigate('/')}>
                             <AddToHomeScreenIcon />
                         </IconButton>
                         <Typography
@@ -76,69 +137,125 @@ export default function AppShell({ children }) {
                             sx={{
                                 fontWeight: 'bold',
                                 color: 'primary.500',
-                                display: { xs: 'none', sm: 'block' }
+                                fontSize: { xs: '1.1rem', sm: undefined },
                             }}
                         >
                             IPA Harbor
                         </Typography>
                     </Stack>
 
-                    {/* 右侧导航按钮 */}
-                    <Stack direction="row" spacing={1}>
-                        <Button
-                            variant="plain"
-                            size="sm"
-                            onClick={() => handleNavigate('/')}
-                            color={location.pathname === '/' ? 'primary' : 'neutral'}
-                        >
-                            {t('ui.home')}
-                        </Button>
-                        <Badge
-                            badgeContent={badgeInfo.count > 0 ? badgeInfo.count : null}
-                            color={badgeInfo.color}
-                            size="sm"
-                        >
-                            <Button
-                                variant="plain"
-                                size="sm"
-                                onClick={() => handleNavigate('/dl')}
-                                color={location.pathname === '/dl' ? 'primary' : 'neutral'}
-                            >
-                                {t('ui.downloadManager')}
-                            </Button>
-                        </Badge>
+                    {/* sm 及以上：横向导航 */}
+                    <Stack direction="row" spacing={1} alignItems="center" sx={{ display: { xs: 'none', sm: 'flex' } }}>
+                        {(isAuthenticated ? navItems : navItems.filter((item) => item.path !== '/purchases')).map(renderNavButton)}
 
-                        {isAuthenticated ? <UserStatus /> : (
-                            <Badge color="danger" size="md" invisible={location.pathname === '/apple-id'} >
+                        {isAuthenticated ? (
+                            <UserStatus />
+                        ) : (
+                            <Badge color="danger" size="md">
                                 <Button
                                     variant="outlined"
                                     size="sm"
                                     onClick={() => handleNavigate('/apple-id')}
-                                    color={location.pathname === '/apple-id' ? 'primary' : 'danger'}
+                                    color="danger"
                                 >
-                                    {location.pathname === '/apple-id' ? t('ui.appleIdLogin') : t('ui.needAppleIdLogin')}
+                                    {t('ui.needAppleIdLogin')}
                                 </Button>
                             </Badge>
                         )}
                         <LanguageSwitcher />
-                        {/* <AdminStatus /> */}
+                    </Stack>
+
+                    {/* sm 以下：账户状态 + 菜单按钮 */}
+                    <Stack
+                        direction="row"
+                        spacing={0.5}
+                        alignItems="center"
+                        sx={{
+                            display: { xs: 'flex', sm: 'none' },
+                            position: 'relative',
+                            zIndex: menuOpen || menuMounted ? 1301 : undefined,
+                        }}
+                    >
+                        {isAuthenticated ? (
+                            !menuMounted && <UserStatus />
+                        ) : (
+                            <Badge color="danger" size="md">
+                                <Button
+                                    variant="outlined"
+                                    size="sm"
+                                    onClick={() => handleNavigate('/apple-id')}
+                                    color="danger"
+                                >
+                                    {t('ui.needAppleIdLogin')}
+                                </Button>
+                            </Badge>
+                        )}
+                        <IconButton
+                            variant="plain"
+                            color="neutral"
+                            onClick={() => setMenuOpen((prev) => !prev)}
+                            aria-label={menuOpen ? t('ui.closeMenu') : t('ui.openMenu')}
+                            aria-expanded={menuOpen}
+                        >
+                            <AnimatePresence mode="wait" initial={false}>
+                                {menuOpen ? (
+                                    <Box
+                                        component={motion.span}
+                                        key="close"
+                                        initial={{ opacity: 0, rotate: -60, scale: 0.88 }}
+                                        animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                                        exit={{ opacity: 0, rotate: 60, scale: 0.88 }}
+                                        transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
+                                        sx={{ display: 'flex' }}
+                                    >
+                                        <CloseIcon />
+                                    </Box>
+                                ) : (
+                                    <Box
+                                        component={motion.span}
+                                        key="menu"
+                                        initial={{ opacity: 0, rotate: 60, scale: 0.88 }}
+                                        animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                                        exit={{ opacity: 0, rotate: -60, scale: 0.88 }}
+                                        transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
+                                        sx={{ display: 'flex' }}
+                                    >
+                                        <MenuIcon />
+                                    </Box>
+                                )}
+                            </AnimatePresence>
+                        </IconButton>
                     </Stack>
                 </Stack>
             </Sheet>
+
+            {/* sm 以下：全屏 overlay 菜单 */}
+            <MobileNavMenu
+                open={menuOpen}
+                onClose={() => setMenuOpen(false)}
+                onMountedChange={setMenuMounted}
+                navItems={navItems}
+                onNavigate={handleNavigate}
+                isAuthenticated={isAuthenticated}
+            />
 
             {/* 主要内容区域 */}
             <Box
                 component="main"
                 sx={{
                     flex: 1,
+                    minHeight: 0,
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
                     p: 3,
                     maxWidth: '1200px',
                     mx: 'auto',
                     width: '100%',
-                    pb: 8
+                    pb: 8,
                 }}
             >
-                {children}
+                <PageTransition>{outlet}</PageTransition>
             </Box>
 
             {/* Footer */}
@@ -153,10 +270,9 @@ export default function AppShell({ children }) {
                     borderColor: 'divider',
                     bgcolor: 'background.surface',
                     p: 1,
-                    zIndex: 1
+                    zIndex: 1,
                 }}
             >
-
                 <Stack
                     direction="row"
                     justifyContent="space-between"
@@ -166,25 +282,34 @@ export default function AppShell({ children }) {
                     {/* 左侧：管理员信息 */}
                     <Stack direction="column" alignItems="flex-start" gap={0.2}>
                         <Typography level="body-xs">IPA Harbor ©2025</Typography>
-                        <Stack direction="row" gap={0.2} sx={{
-                            cursor: 'pointer',
-                            ":hover": {
-                                opacity: 0.8
-                            },
-                            transition: 'opacity 0.2s ease-in-out'
-                        }}>
-                            <Typography level="body-xs" sx={{
-                                fontSize: '0.625rem', fontWeight: 'normal',
-
+                        <Stack
+                            direction="row"
+                            gap={0.2}
+                            sx={{
+                                cursor: 'pointer',
+                                ':hover': { opacity: 0.8 },
+                                transition: 'opacity 0.2s ease-in-out',
                             }}
+                        >
+                            <Typography
+                                level="body-xs"
+                                sx={{ fontSize: '0.625rem', fontWeight: 'normal' }}
                                 onClick={() => window.open('https://github.com/ij369/ipa-harbor', '_blank')}
-                                startDecorator={<GitHubIcon sx={{ fontSize: '0.75rem' }} />}>{t('ui.footer')}</Typography>
-                            <Typography level="body-xs" sx={{
-                                fontSize: '0.625rem', fontWeight: 'normal',
-                                display: { xs: 'none', sm: 'none', md: 'block' }
-                            }}
+                                startDecorator={<GitHubIcon sx={{ fontSize: '0.75rem' }} />}
+                            >
+                                {t('ui.footer')}
+                            </Typography>
+                            <Typography
+                                level="body-xs"
+                                sx={{
+                                    fontSize: '0.625rem',
+                                    fontWeight: 'normal',
+                                    display: { xs: 'none', sm: 'none', md: 'block' },
+                                }}
                                 onClick={() => window.open('https://github.com/ij369/ipa-harbor', '_blank')}
-                            >{t('ui.footerSuffix')}</Typography>
+                            >
+                                {t('ui.footerSuffix')}
+                            </Typography>
                         </Stack>
                     </Stack>
 

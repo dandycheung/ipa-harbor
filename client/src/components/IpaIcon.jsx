@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
 import {
-    Box, Stack, Typography, Skeleton, Tooltip, Divider, IconButton, Chip, Link,
+    Box, Stack, Typography, Skeleton, Divider, IconButton, Chip, Link,
     Drawer, Button, DialogTitle, DialogContent, ModalClose, Sheet
 } from '@mui/joy';
-import { getAppIconUrl, getAppDownloadPackageUrl, deleteTask, downloadApp } from '../utils/api';
+import MouseTooltip from './MouseTooltip';
+import { getAppIconUrl, getAppDownloadPackageUrl, deleteTask, downloadApp, isRateLimitError } from '../utils/api';
 import Swal from 'sweetalert2';
 import formatFileSize from '../utils/formatFileSize.js';
 import { Close as CloseIcon, Download as DownloadIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
+import { useApp } from '../contexts/AppContext';
 
-function AppIcon({ appId, size = 128, disabled = false }) {
+function AppIcon({ appId, size = 128, disabled = false, country }) {
     const [loaded, setLoaded] = useState(false);
-    const iconUrl = appId ? getAppIconUrl(appId) : null;
+    const iconUrl = appId ? getAppIconUrl(appId, size, country) : null;
 
     return (
         <Box
@@ -76,6 +78,7 @@ function AppIcon({ appId, size = 128, disabled = false }) {
 
 export default function IpaIcon({ item, size = 128, isDragging = false }) {
     const { t } = useTranslation();
+    const { user } = useApp();
     const [drawerOpen, setDrawerOpen] = useState(false);
     const {
         id: appId,
@@ -98,6 +101,12 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
         createdAt,
     } = item;
 
+    const isCompactIcon = size < 96;
+    const labelFontSize = isCompactIcon ? '0.65rem' : '0.9rem';
+    const subLabelFontSize = isCompactIcon ? '0.55rem' : '0.75rem';
+    const progressBarHeight = isCompactIcon ? 8 : 15;
+    const progressBarBottom = isCompactIcon ? 4 : 9;
+
     const extractAppInfo = (fileName) => {
         if (!fileName) return { appId: null, versionId: null };
         const match = fileName.match(/^(\d+)_(.+)\.ipa$/);
@@ -106,6 +115,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
 
     const { appId: extractedAppId, versionId } = extractAppInfo(name);
     const finalAppId = appId || extractedAppId;
+    const displayAppId = finalAppId || (itemId != null ? String(itemId) : null);
 
     const formatDate = (dateString) => {
         //  if (!dateString) return '未知';
@@ -127,7 +137,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
             { label: t('ui.appVersion'), value: bundleShortVersionString },
             { label: t('ui.buildVersion'), value: bundleVersion }, // 构建版本
             { label: t('ui.bundleId'), value: softwareVersionBundleId }, // bundle ID
-            { label: t('ui.appId'), value: itemId }, // 应用 ID
+            { label: t('ui.appId'), value: displayAppId }, // 应用 ID
             { label: t('ui.versionId'), value: softwareVersionExternalIdentifier }, // 版本 ID
             { label: t('ui.productType'), value: productType }, // 产品类型
             { label: t('ui.fileSize'), value: fileSize ? formatFileSize(fileSize) : null }, // 文件大小
@@ -174,6 +184,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                     });
                 }
             } catch (error) {
+                if (isRateLimitError(error)) return;
                 console.error('删除任务失败:', error);
                 Swal.fire({
                     icon: 'error',
@@ -212,6 +223,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                 });
             }
         } catch (error) {
+            if (isRateLimitError(error)) return;
             console.error('重试下载失败:', error.message);
             Swal.fire({
                 icon: 'error',
@@ -222,6 +234,39 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
         }
     };
 
+    const tooltipTitle = tooltipContent && (
+        <Box sx={{ whiteSpace: 'pre-line', maxWidth: 300 }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center">
+                <Typography level="body-xs">{bundleDisplayName}</Typography>
+                <Typography level="body-xs">{bundleShortVersionString}</Typography>
+            </Stack>
+            {bundleDisplayName && <Divider sx={{ my: 0.5 }} />}
+            <Typography level="body-xs">{tooltipContent}</Typography>
+        </Box>
+    );
+
+    const itemHoverSx = {
+        borderRadius: '12px',
+        p: isCompactIcon ? 0.5 : 1,
+        boxSizing: 'content-box',
+        transition: 'background-color 0.22s ease, box-shadow 0.22s ease',
+        '@media (hover: hover)': {
+            '&:hover': {
+                backgroundColor: 'primary.softBg',
+                boxShadow: 'inset 0 0 0 1px rgba(var(--joy-palette-primary-mainChannel) / 0.18)',
+            },
+        },
+    };
+
+    const wrapLabelTooltip = (labels) => {
+        if (!tooltipContent) return labels;
+        return (
+            <MouseTooltip title={isDragging ? null : tooltipTitle} disabled={isDragging}>
+                {labels}
+            </MouseTooltip>
+        );
+    };
+
     const renderContent = () => {
         switch (status) {
             case 'pending':
@@ -230,17 +275,17 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                     <>
                         {/* 图标 + 进度条 */}
                         <Box sx={{ position: 'relative' }}>
-                            <AppIcon appId={finalAppId} size={size} disabled />
+                            <AppIcon appId={finalAppId} size={size} disabled country={user?.region} />
                             <Box
                                 sx={{
                                     position: 'absolute',
-                                    bottom: 9,
+                                    bottom: progressBarBottom,
                                     left: '9%',
                                     right: '9%',
-                                    height: '15px',
-                                    padding: '2px',
-                                    border: '1.2px solid rgba(0,0,0,0.2)',
-                                    borderRadius: '16px',
+                                    height: progressBarHeight,
+                                    padding: isCompactIcon ? '1px' : '2px',
+                                    border: isCompactIcon ? '0.8px solid rgba(0,0,0,0.2)' : '1.2px solid rgba(0,0,0,0.2)',
+                                    borderRadius: isCompactIcon ? '8px' : '16px',
                                     backgroundColor: 'rgba(255,255,255,0.3)', // 轨道底色
                                     overflow: 'hidden',
                                     boxSizing: 'border-box',
@@ -260,31 +305,33 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                         </Box>
 
                         {/* 描述部分 */}
-                        <Stack spacing="0.2rem" alignItems="center" sx={{ width: size }}>
-                            <Typography
-                                sx={{
-                                    fontSize: '0.9rem',
-                                    textAlign: 'center',
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    width: '100%',
-                                }}
-                            >
-                                {/* {status === 'running' ? '下载中' : '等待中'} {progress && progress + '%'} */}
-                                {status === 'running' ? t('ui.downloading') : t('ui.waiting')} {progress && progress + '%'}
-                            </Typography>
-                            <Typography
-                                sx={{
-                                    fontSize: '0.75rem',
-                                    textAlign: 'center',
-                                    color: '#666',
-                                    wordBreak: 'break-all',
-                                }}
-                            >
-                                {sizeProgress || `${progress}%`}
-                            </Typography>
-                        </Stack>
+                        {wrapLabelTooltip(
+                            <Stack spacing="0.1rem" alignItems="center" sx={{ width: size }}>
+                                <Typography
+                                    sx={{
+                                        fontSize: labelFontSize,
+                                        textAlign: 'center',
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        width: '100%',
+                                    }}
+                                >
+                                    {/* {status === 'running' ? '下载中' : '等待中'} {progress && progress + '%'} */}
+                                    {status === 'running' ? t('ui.downloading') : t('ui.waiting')} {progress && progress + '%'}
+                                </Typography>
+                                <Typography
+                                    sx={{
+                                        fontSize: subLabelFontSize,
+                                        textAlign: 'center',
+                                        color: '#666',
+                                        wordBreak: 'break-all',
+                                    }}
+                                >
+                                    {sizeProgress || `${progress}%`}
+                                </Typography>
+                            </Stack>
+                        )}
                     </>
                 );
 
@@ -295,13 +342,10 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                             sx={{
                                 position: 'relative',
                                 cursor: 'pointer',
-                                '&:hover': {
-                                    opacity: 0.8
-                                }
                             }}
                             onClick={handleDeleteTask}
                         >
-                            <AppIcon appId={finalAppId} size={size} disabled />
+                            <AppIcon appId={finalAppId} size={size} disabled country={user?.region} />
                             <Box
                                 sx={{
                                     position: 'absolute',
@@ -324,24 +368,26 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                             </Box>
                         </Box>
 
-                        <Stack
-                            spacing="0.2rem"
-                            alignItems="center"
-                            sx={{
-                                width: size,
-                                cursor: 'pointer',
-                                '&:hover': {
-                                    opacity: 0.8
-                                }
-                            }}
-                            onClick={handleRetryDownload}
-                        >
-                            <Typography sx={{ fontSize: '0.9rem', textAlign: 'center' }}>{t('ui.failed')}</Typography>
-                            <Link sx={{ fontSize: '0.75rem', textAlign: 'center', color: '#666' }}>
-                                {/* 点击这里重试 */}
-                                {t('ui.clickToRetry')}
-                            </Link>
-                        </Stack>
+                        {wrapLabelTooltip(
+                            <Stack
+                                spacing="0.1rem"
+                                alignItems="center"
+                                sx={{
+                                    width: size,
+                                    cursor: 'pointer',
+                                    '&:hover': {
+                                        opacity: 0.8
+                                    }
+                                }}
+                                onClick={handleRetryDownload}
+                            >
+                                <Typography sx={{ fontSize: labelFontSize, textAlign: 'center' }}>{t('ui.failed')}</Typography>
+                                <Link sx={{ fontSize: subLabelFontSize, textAlign: 'center', color: '#666' }}>
+                                    {/* 点击这里重试 */}
+                                    {t('ui.clickToRetry')}
+                                </Link>
+                            </Stack>
+                        )}
                     </>
                 );
 
@@ -349,49 +395,53 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
             case 'downloaded':
                 return (
                     <>
-                        <AppIcon appId={finalAppId} size={size} />
-                        <Stack spacing="0.2rem" alignItems="center" sx={{ width: size }}>
-                            <Typography
-                                sx={{
-                                    fontSize: '0.9rem',
-                                    textAlign: 'center',
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    width: '100%',
-                                }}
-                            >
-                                {bundleDisplayName || name}
-                            </Typography>
-                            <Typography sx={{ fontSize: '0.75rem', textAlign: 'center', color: '#666' }}>
-                                {formatFileSize(fileSize) || t('ui.completed')}
-                            </Typography>
-                        </Stack>
+                        <AppIcon appId={finalAppId} size={size} country={user?.region} />
+                        {wrapLabelTooltip(
+                            <Stack spacing="0.1rem" alignItems="center" sx={{ width: size }}>
+                                <Typography
+                                    sx={{
+                                        fontSize: labelFontSize,
+                                        textAlign: 'center',
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        width: '100%',
+                                    }}
+                                >
+                                    {bundleDisplayName || name}
+                                </Typography>
+                                <Typography sx={{ fontSize: subLabelFontSize, textAlign: 'center', color: '#666' }}>
+                                    {formatFileSize(fileSize) || t('ui.completed')}
+                                </Typography>
+                            </Stack>
+                        )}
                     </>
                 );
 
             default:
                 return (
                     <>
-                        <AppIcon appId={finalAppId} size={size} />
-                        <Stack spacing="0.2rem" alignItems="center" sx={{ width: size }}>
-                            <Typography
-                                sx={{
-                                    fontSize: '0.9rem',
-                                    textAlign: 'center',
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    width: '100%',
-                                }}
-                            >
-                                {/* {name || '未知应用'} */}
-                                {name || t('ui.unknown')}
-                            </Typography>
-                            <Typography sx={{ fontSize: '0.8rem', textAlign: 'center', color: '#666' }}>
-                                —
-                            </Typography>
-                        </Stack>
+                        <AppIcon appId={finalAppId} size={size} country={user?.region} />
+                        {wrapLabelTooltip(
+                            <Stack spacing="0.1rem" alignItems="center" sx={{ width: size }}>
+                                <Typography
+                                    sx={{
+                                        fontSize: labelFontSize,
+                                        textAlign: 'center',
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        width: '100%',
+                                    }}
+                                >
+                                    {/* {name || '未知应用'} */}
+                                    {name || t('ui.unknown')}
+                                </Typography>
+                                <Typography sx={{ fontSize: subLabelFontSize, textAlign: 'center', color: '#666' }}>
+                                    —
+                                </Typography>
+                            </Stack>
+                        )}
                     </>
                 );
         }
@@ -409,22 +459,17 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
         window.open(getAppDownloadPackageUrl(appId, version), '_blank');
     };
 
-    const tooltipTitle = tooltipContent && (
-        <Box sx={{ whiteSpace: 'pre-line', maxWidth: 300 }}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
-                <Typography level="body-xs">{bundleDisplayName}</Typography>
-                <Typography level="body-xs">{bundleShortVersionString}</Typography>
-            </Stack>
-            {bundleDisplayName && <Divider sx={{ my: 0.5 }} />}
-            <Typography level="body-xs">{tooltipContent}</Typography>
-        </Box>
-    );
-
     const content = (
         <Stack
             alignItems="center"
-            spacing="0.4rem"
-            sx={{ width: size, userSelect: 'none', position: 'relative', display: 'inline-block' }}
+            spacing={isCompactIcon ? '0.15rem' : '0.4rem'}
+            sx={{
+                width: size,
+                userSelect: 'none',
+                position: 'relative',
+                display: 'inline-block',
+                ...itemHoverSx,
+            }}
             onClick={handleClick}
         >
             {renderContent()}
@@ -449,6 +494,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                         bgcolor: 'transparent',
                         p: { md: 3, sm: 0 },
                         boxShadow: 'none',
+                        minWidth: 300,
                     },
                 },
             }}
@@ -461,6 +507,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                     flexDirection: 'column',
                     gap: 2,
                     height: '100%',
+                    minWidth: 300,
                     overflow: 'auto',
                 }}
             >
@@ -470,7 +517,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                 <DialogContent sx={{ gap: 2 }}>
                     <Stack spacing={2}>
                         <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
-                            <AppIcon appId={finalAppId} size={120} />
+                            <AppIcon appId={finalAppId} size={120} country={user?.region} />
                         </Box>
 
                         <Stack spacing={1}>
@@ -504,10 +551,10 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                                     <Typography level="body-md">{softwareVersionBundleId}</Typography>
                                 </Box>
                             )}
-                            {itemId && (
+                            {displayAppId && (
                                 <Box>
                                     <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.appId')}</Typography>
-                                    <Typography level="body-md">{itemId}</Typography>
+                                    <Typography level="body-md">{displayAppId}</Typography>
                                 </Box>
                             )}
                             {softwareVersionExternalIdentifier && (
@@ -575,20 +622,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
 
     return (
         <>
-            {tooltipContent ? (
-                <Tooltip
-                    color="neutral"
-                    variant="outlined"
-                    title={isDragging ? null : tooltipTitle}
-                    placement="top"
-                    disableHoverListener={isDragging}
-                    arrow={!isDragging}
-                >
-                    {content}
-                </Tooltip>
-            ) : (
-                content
-            )}
+            {content}
             {detailDrawer}
         </>
     );

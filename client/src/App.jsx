@@ -9,6 +9,7 @@ import AppShell from './components/AppShell';
 import AdminGuard from './components/AdminGuard';
 import Home from './pages/Home';
 import DownloadManager from './pages/DownloadManager';
+import Purchases from './pages/Purchases';
 import AdminLogin from './pages/AdminLogin';
 import AdminSetup from './pages/AdminSetup';
 import AppleIdLogin from './pages/AppleIdLogin';
@@ -35,17 +36,21 @@ function App() {
                 </AdminGuard>
               } />
 
-              <Route path="/*" element={
+              <Route path="/apple-id" element={
                 <AdminGuard>
-                  <AppShell>
-                    <Routes>
-                      <Route path="/" element={<Home />} />
-                      <Route path="/dl" element={<DownloadManager />} />
-                      <Route path="/apple-id" element={<AppleIdLogin />} />
-                    </Routes>
-                  </AppShell>
+                  <AppleIdLogin />
                 </AdminGuard>
               } />
+
+              <Route element={
+                <AdminGuard>
+                  <AppShell />
+                </AdminGuard>
+              }>
+                <Route index element={<Home />} />
+                <Route path="purchases" element={<Purchases />} />
+                <Route path="dl" element={<DownloadManager />} />
+              </Route>
             </Routes>
           </Router>
         </AppProvider>

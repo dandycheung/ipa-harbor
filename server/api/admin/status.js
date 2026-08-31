@@ -1,10 +1,12 @@
 const database = require('../../utils/database');
+const { getAppVersion } = require('../../utils/version');
 
 /**
  * 获取管理员登录状态
  */
 async function statusHandler(req, res) {
     try {
+        const version = getAppVersion();
         // 检查系统是否已初始化（是否有用户）
         const userCount = await database.getUserCount();
         const isInitialized = userCount > 0;
@@ -14,6 +16,7 @@ async function statusHandler(req, res) {
             return res.json({
                 success: true,
                 data: {
+                    version,
                     isInitialized: true,
                     isLoggedIn: true,
                     user: {
@@ -32,6 +35,7 @@ async function statusHandler(req, res) {
         return res.json({
             success: true,
             data: {
+                version,
                 isInitialized,
                 isLoggedIn: false,
                 user: null,

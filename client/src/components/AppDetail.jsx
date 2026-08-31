@@ -23,7 +23,7 @@ import {
 } from '@mui/joy';
 import { Star, Download, Category, Person, History, AccountBalanceWallet, Delete, Refresh, InstallMobile, LabelImportantOutline } from '@mui/icons-material';
 import { tabClasses } from '@mui/joy/Tab';
-import { getAppVersions, purchaseApp, downloadApp, deleteTask, getAppInstallPackageUrl, getAppDownloadPackageUrl } from '../utils/api';
+import { getAppVersions, purchaseApp, downloadApp, deleteTask, getAppInstallPackageUrl, getAppDownloadPackageUrl, isRateLimitError } from '../utils/api';
 import { useApp } from '../contexts/AppContext';
 import Swal from 'sweetalert2';
 import isValidDomain from 'is-valid-domain';
@@ -185,6 +185,7 @@ export default function AppDetail({ app }) {
                 }
             }
         } catch (error) {
+            if (isRateLimitError(error)) return;
             console.error('获取版本列表失败:', error);
             console.log('版本列表错误类型:', error.errorType);
             console.log('版本列表错误对象:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
@@ -286,6 +287,7 @@ export default function AppDetail({ app }) {
                 });
             }
         } catch (error) {
+            if (isRateLimitError(error)) return;
             console.error('下载失败:', error);
             console.log('错误类型:', error.errorType);
             console.log('错误对象:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
@@ -311,6 +313,7 @@ export default function AppDetail({ app }) {
                             showConfirmButton: false
                         });
                     } catch (purchaseError) {
+                        if (isRateLimitError(purchaseError)) return;
                         Swal.fire({
                             icon: 'error',
                             title: t('ui.claimFailed'), // 获取失败
@@ -374,6 +377,7 @@ export default function AppDetail({ app }) {
                     });
                 }
             } catch (error) {
+                if (isRateLimitError(error)) return;
                 console.error('删除任务失败:', error);
                 Swal.fire({
                     icon: 'error',
@@ -800,7 +804,7 @@ export default function AppDetail({ app }) {
             {/* 应用基本信息 */}
             <Stack direction="row" gap={3} sx={{ mb: 3 }}>
                 <Avatar
-                    src={getAppIconUrl(app.trackId, 512)}
+                    src={getAppIconUrl(app.trackId, 512, user?.region)}
                     alt={app.trackName}
                     sx={{ width: 128, height: 128, borderRadius: '22%', boxShadow: 'sm' }}
                 />

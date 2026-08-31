@@ -1,7 +1,7 @@
 const { exec } = require('child_process');
 const path = require('path');
+const { clearIpatoolAccountCache } = require('../../utils/ipatoolAccount');
 
-// ipatool二进制文件路径
 const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
 const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
 
@@ -54,6 +54,7 @@ async function revokeHandler(req, res) {
             const result = await executeIpatool(command);
 
             if (result.success) {
+                clearIpatoolAccountCache();
                 return res.json({
                     success: true,
                     message: '撤销认证成功',

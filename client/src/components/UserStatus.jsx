@@ -13,7 +13,7 @@ import {
 } from '@mui/joy';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext';
-import { revokeAuth } from '../utils/api';
+import { revokeAuth, isRateLimitError } from '../utils/api';
 
 import Swal from 'sweetalert2';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -49,6 +49,7 @@ export default function UserStatus() {
                         showConfirmButton: false
                     });
                 } catch (error) {
+                    if (isRateLimitError(error)) return;
                     Swal.fire({
                         icon: 'error',
                         title: t('ui.logoutFailed'), // 退出失败
@@ -157,6 +158,8 @@ export default function UserStatus() {
                 open={regionDialogOpen}
                 onClose={handleRegionDialogClose}
                 currentRegion={user?.region}
+                storeRegion={user?.storeRegion}
+                regionSource={user?.regionSource}
             />
         </Dropdown>
     );

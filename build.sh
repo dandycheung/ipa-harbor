@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR"
 SERVER_DIR="$REPO_ROOT/server"
 BIN_DIR="$SERVER_DIR/bin"
-DL_SCRIPT="$REPO_ROOT/dl_latest.sh"
+BUILD_IPATOOL_SCRIPT="$REPO_ROOT/build_ipatool.sh"
 
 IMAGE_NAME="${IMAGE_NAME:-ipaharbor}"
 TAG="${TAG:-latest}"
@@ -61,28 +61,39 @@ if [[ ! -d "$SERVER_DIR" ]]; then
 fi
 
 if [[ "$FETCH" -eq 1 ]]; then
-  if [[ ! -x "$DL_SCRIPT" ]]; then
-    echo "Cannot execute: $DL_SCRIPT (try: chmod +x dl_latest.sh)" >&2
+  if [[ ! -x "$BUILD_IPATOOL_SCRIPT" ]]; then
+    echo "Cannot execute: $BUILD_IPATOOL_SCRIPT (try: chmod +x build_ipatool.sh)" >&2
     exit 1
   fi
-  echo "Running dl_latest.sh to fetch ipatool …"
-  "$DL_SCRIPT"
+  echo "Running build_ipatool.sh to build ipatool from source …"
+  "$BUILD_IPATOOL_SCRIPT" --choice 1
 fi
 
 # Dockerfile needs ipatool *.tar.gz under bin directory
 if ! compgen -G "$BIN_DIR/ipatool-*-linux-*.tar.gz" > /dev/null; then
   echo "No ipatool-*-linux-*.tar.gz under $BIN_DIR" >&2
-  echo "Run ./dl_latest.sh first, or: $0 --fetch" >&2
+  echo "Run ./build_ipatool.sh first, or: $0 --fetch" >&2
   exit 1
 fi
 
 printf 'Building image: %s (context: %s)\n' "${FULL_IMAGE}" "${SERVER_DIR}"
 cd "${SERVER_DIR}"
 
+if [[ -z "${APP_VERSION:-}" ]]; then
+  if APP_VERSION="$(git -C "${REPO_ROOT}" describe --tags --always 2>/dev/null)"; then
+    APP_VERSION="${APP_VERSION#v}"
+  else
+    APP_VERSION="$(node -p "require('./package.json').version")"
+  fi
+fi
+printf 'App version: %s\n' "${APP_VERSION}"
+
+BUILD_ARGS=(--build-arg "APP_VERSION=${APP_VERSION}")
+
 if [[ ${#PLATFORM_ARG[@]} -gt 0 ]]; then
-  docker build "${PLATFORM_ARG[@]}" -t "${FULL_IMAGE}" --load .
+  docker build "${PLATFORM_ARG[@]}" "${BUILD_ARGS[@]}" -t "${FULL_IMAGE}" --load .
 else
-  docker build -t "${FULL_IMAGE}" --load .
+  docker build "${BUILD_ARGS[@]}" -t "${FULL_IMAGE}" --load .
 fi
 
 printf 'Local image ready: %s\n' "${FULL_IMAGE}"

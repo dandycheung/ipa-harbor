@@ -2,6 +2,7 @@ const { spawn } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const path = require('path');
+const { resolveItemId } = require('../../utils/ipaFileName');
 const { parseIpaMetadata } = require('../ipa/metadata');
 const wsManager = require('../../utils/websocketServer');
 
@@ -600,8 +601,8 @@ class TaskManager {
                             const jsonContent = fs.readFileSync(jsonFilePath, 'utf8');
                             const metadata = JSON.parse(jsonContent);
 
-                            // 添加需要的metadata字段
-                            if (metadata.itemId) fileInfo.itemId = metadata.itemId;
+                            const itemId = resolveItemId(metadata, file);
+                            if (itemId) fileInfo.itemId = itemId;
                             if (metadata.bundleDisplayName) fileInfo.bundleDisplayName = metadata.bundleDisplayName;
                             if (metadata.artistName) fileInfo.artistName = metadata.artistName;
                             if (metadata.bundleShortVersionString) fileInfo.bundleShortVersionString = metadata.bundleShortVersionString;

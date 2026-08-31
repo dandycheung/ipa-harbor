@@ -1,27 +1,36 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     Box,
     Stack,
     Typography,
     Input,
     Button,
-    Table,
     Sheet,
     Chip,
     CircularProgress,
     Avatar,
     IconButton
 } from '@mui/joy';
+import { TableVirtuoso } from 'react-virtuoso';
 import { Search, Download, Public } from '@mui/icons-material';
-import { searchApps, getAppDetails, getAppIconUrl } from '../utils/api';
+import { searchApps, getAppDetails, getAppIconUrl, isRateLimitError } from '../utils/api';
 import Dialog from '../components/Dialog';
 import AppDetail from '../components/AppDetail';
 import RegionSelector from '../components/RegionSelector';
 import Swal from 'sweetalert2';
-import { isMobile as isMobile } from 'react-device-detect';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '../contexts/AppContext';
+import {
+    wideColSx,
+    COL_WIDTH,
+    headerColStyle,
+    createTableComponents,
+    APP_ICON_SIZE,
+    appIconSx,
+    monoFontSx,
+    monoCellStyle,
+} from '../styles/tableColumns';
 
 export default function Home() {
     const { t } = useTranslation();
@@ -98,6 +107,7 @@ export default function Home() {
                 setSearchResults(response);
             }
         } catch (error) {
+            if (isRateLimitError(error)) return;
             console.error('搜索失败:', error.message);
             Swal.fire({
                 icon: 'error',
@@ -143,6 +153,7 @@ export default function Home() {
                 setCurrentDetailIndex(clickedIndex >= 0 ? clickedIndex : 0);
             }
         } catch (error) {
+            if (isRateLimitError(error)) return;
             console.error('获取应用详情失败:', error.message);
             Swal.fire({
                 icon: 'error',
@@ -175,14 +186,31 @@ export default function Home() {
     };
 
 
+    const searchAppsList = searchResults?.data?.apps || [];
+
+    const tableComponents = useMemo(() => createTableComponents((props) => {
+        const app = props.item;
+        if (!app) return {};
+        return {
+            style: { cursor: 'pointer' },
+            onClick: () => handleRowClick(app),
+        };
+    }), [searchAppsList]);
+
     return (
-        <Box>
-            <Typography level="h2" sx={{ mb: 3 }}>
+        <Box sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            flex: 1,
+            minHeight: 0,
+            overflow: 'hidden',
+        }}>
+            <Typography level="h2" sx={{ mb: 3, flexShrink: 0 }}>
                 {/* 应用搜索 */}
                 {t('ui.appSearch')}
             </Typography>
 
-            <Stack direction="row" spacing={2} sx={{ mb: 4 }}>
+            <Stack direction="row" spacing={2} sx={{ mb: searchResults ? 2 : 4, flexShrink: 0 }}>
                 <Input
                     placeholder={t('ui.searchPlaceholder')}
                     value={keyword}
@@ -240,60 +268,63 @@ export default function Home() {
             </Stack>
 
             {searchResults && (
-                <Box>
-                    <Typography level="h4" sx={{ mb: 2 }}>
-                        {/* 搜索结果 - "{searchResults.keyword}" */}
+                <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                    <Typography level="h4" sx={{ mb: 2, flexShrink: 0 }}>
                         {t('ui.searchResults')} - "{searchResults.keyword}"
                     </Typography>
 
-                    {searchResults.data?.apps?.length > 0 ? (
-                        <Sheet variant="outlined" sx={{ borderRadius: 'md', overflow: 'hidden' }}>
-                            <Table stickyHeader>
-                                <thead>
-                                    <tr>
-                                        <th style={{ minWidth: '200px' }}>{t('ui.appName_label')}</th>
-                                        <th style={{ width: '100px', display: isMobile ? 'none' : 'table-cell' }}>{t('ui.appId')}</th>
-                                        <th style={{ display: isMobile ? 'none' : 'table-cell' }}>{t('ui.bundleId')}</th>
-                                        <th style={{ width: '100px' }}>{t('ui.appVersion')}</th>
-                                        <th style={{ width: '80px' }}>{t('ui.appPrice')}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {searchResults.data.apps.map((app) => (
-                                        <tr
-                                            key={app.id}
-                                            onClick={() => handleRowClick(app)}
-                                            style={{ cursor: 'pointer' }}
-                                        >
+                    {searchAppsList.length > 0 ? (
+                        <Sheet variant="outlined" sx={{ flex: 1, minHeight: 0, borderRadius: 'md', overflow: 'hidden', position: 'relative' }}>
+                            <Box sx={{ position: 'absolute', inset: 0 }}>
+                                <TableVirtuoso
+                                    style={{ height: '100%' }}
+                                    data={searchAppsList}
+                                    fixedHeaderContent={() => (
+                                        <tr>
+                                            <th style={{ minWidth: COL_WIDTH.nameMin }}>
+                                                {t('ui.appName_label')}
+                                            </th>
+                                            <th style={{ ...headerColStyle(COL_WIDTH.appId), ...monoCellStyle }}>
+                                                {t('ui.appId')}
+                                            </th>
+                                            <Box component="th" sx={{ ...wideColSx, ...monoFontSx }}>
+                                                {t('ui.bundleId')}
+                                            </Box>
+                                            <Box component="th" sx={{ ...headerColStyle(COL_WIDTH.version), ...wideColSx, ...monoFontSx }}>
+                                                {t('ui.appVersion')}
+                                            </Box>
+                                            <Box component="th" sx={{ ...headerColStyle(COL_WIDTH.price), ...wideColSx }}>
+                                                {t('ui.appPrice')}
+                                            </Box>
+                                        </tr>
+                                    )}
+                                    itemContent={(index, app) => (
+                                        <>
                                             <td>
                                                 <Stack direction="row" spacing={2} alignItems="center">
                                                     <Avatar
-                                                        src={getAppIconUrl(app.id, 40)}
+                                                        src={getAppIconUrl(app.id, APP_ICON_SIZE, user?.region)}
                                                         alt={app.name}
                                                         size="sm"
-                                                        sx={{
-                                                            borderRadius: '22%',
-                                                            width: 40,
-                                                            height: 40
-                                                        }}
+                                                        sx={appIconSx}
                                                     />
                                                     <Typography fontWeight="md">
                                                         {app.name}
                                                     </Typography>
                                                 </Stack>
                                             </td>
-                                            <td style={{ display: isMobile ? 'none' : 'table-cell' }}>{app.id}</td>
-                                            <td style={{ display: isMobile ? 'none' : 'table-cell' }}>
-                                                <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
+                                            <td style={monoCellStyle}>{app.id}</td>
+                                            <Box component="td" sx={{ ...wideColSx, ...monoFontSx }}>
+                                                <Typography level="body-sm" sx={{ color: 'text.secondary', ...monoFontSx }}>
                                                     {app.bundleID}
                                                 </Typography>
-                                            </td>
-                                            <td>
-                                                <Chip size="sm" variant="soft">
+                                            </Box>
+                                            <Box component="td" sx={wideColSx}>
+                                                <Chip size="sm" variant="soft" sx={monoFontSx}>
                                                     {app.version}
                                                 </Chip>
-                                            </td>
-                                            <td>
+                                            </Box>
+                                            <Box component="td" sx={wideColSx}>
                                                 <Chip
                                                     size="sm"
                                                     color={app.price === 0 ? 'success' : 'primary'}
@@ -301,32 +332,31 @@ export default function Home() {
                                                 >
                                                     {formatPrice(app.price)}
                                                 </Chip>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </Table>
+                                            </Box>
+                                        </>
+                                    )}
+                                    components={tableComponents}
+                                />
+                            </Box>
                         </Sheet>
                     ) : (
                         <Box sx={{ textAlign: 'center', py: 4 }}>
                             <Typography level="body-lg" sx={{ color: 'text.secondary' }}>
-                                {/* 没有找到相关应用 */}
                                 {t('ui.noResults')}
                             </Typography>
                         </Box>
                     )}
 
-                    {searchResults.data?.count && (
-                        <Typography level="body-sm" sx={{ mt: 2, color: 'text.secondary' }}>
-                            {/* 找到 {searchResults.data.count} 个结果 */}
+                    {searchResults.data?.count > 0 && (
+                        <Typography level="body-sm" sx={{ mt: 2, flexShrink: 0, color: 'text.secondary' }}>
                             {t('ui.resultsCount', { count: searchResults.data.count })}
                         </Typography>
                     )}
                 </Box>
             )}
 
-            {loading && (
-                <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+            {loading && !searchResults && (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 4, flexShrink: 0 }}>
                     <CircularProgress />
                 </Box>
             )}
@@ -357,6 +387,8 @@ export default function Home() {
                     }
                 }}
                 currentRegion={user?.region}
+                storeRegion={user?.storeRegion}
+                regionSource={user?.regionSource}
             />
         </Box>
     );

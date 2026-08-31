@@ -18,6 +18,9 @@ export default defineConfig({
     })
   ],
   base: './', // 相对路径
+  optimizeDeps: {
+    include: ['motion/react'],
+  },
   build: {
     sourcemap: false, // 关闭 source map
     outDir: '../server/static', // 输出目录

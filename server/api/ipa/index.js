@@ -3,40 +3,11 @@ const router = express.Router();
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
-const { exec } = require('child_process');
 
 // 导入IPA相关的路由
 const { metadataHandler, parseIpaMetadata } = require('./metadata');
 
-const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
-const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
-
-/**
- * 获取当前用户的地区设置
- */
-async function getUserRegion() {
-    return new Promise((resolve) => {
-        const command = `"${IPATOOL_PATH}" auth info --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
-
-        exec(command, { timeout: 15000 }, (error, stdout, stderr) => {
-            if (error) {
-                resolve(null);
-            } else {
-                try {
-                    const result = JSON.parse(stdout);
-                    if (result.email) {
-                        const region = global.userRegions?.get(result.email);
-                        resolve(region || null);
-                    } else {
-                        resolve(null);
-                    }
-                } catch (parseError) {
-                    resolve(null);
-                }
-            }
-        });
-    });
-}
+const { getEffectiveRegion } = require('../../utils/userRegion');
 
 // 获取应用图标URL的辅助函数
 async function getAppIconUrls(appId, userRegion = null) {
@@ -118,7 +89,7 @@ router.get('/install-package/:fileName/manifest.plist', async (req, res) => {
             const appId = fileName.split('_')[0];
 
             // 获取用户地区设置
-            const userRegion = await getUserRegion();
+            const userRegion = await getEffectiveRegion();
 
             // 获取图标URL
             const iconUrls = await getAppIconUrls(appId, userRegion);

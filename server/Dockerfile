@@ -1,11 +1,14 @@
 # syntax=docker/dockerfile:1.4
 
-FROM node:lts-alpine
+FROM node:lts-bookworm-slim
 
-RUN apk add --no-cache curl tar
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 ARG TARGETARCH
+ARG APP_VERSION
 
 # 复制 package 文件并安装依赖
 COPY package*.json ./
@@ -36,6 +39,7 @@ RUN set -ex && \
 
 # 设置环境变量
 ENV NODE_ENV=production
+ENV APP_VERSION=${APP_VERSION}
 ENV KEYCHAIN_PASSPHRASE=""
 ENV PORT=3080
 ENV ALLOWED_DOMAINS=""
@@ -43,8 +47,8 @@ ENV ENABLE_MORE_LOGS=false
 ENV ALLOW_LAN_ACCESS=true
 
 # 创建非 root 用户和数据目录
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S ij369 -u 1001 -G nodejs && \
+RUN groupadd -g 1001 nodejs && \
+    useradd -r -u 1001 -g nodejs -d /app -s /usr/sbin/nologin ij369 && \
     chown -R ij369:nodejs /app
 
 USER ij369

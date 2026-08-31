@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR"
 SERVER_DIR="$REPO_ROOT/server"
 BIN_DIR="$SERVER_DIR/bin"
-DL_SCRIPT="$REPO_ROOT/dl_latest.sh"
+BUILD_IPATOOL_SCRIPT="$REPO_ROOT/build_ipatool_zh.sh"
 
 IMAGE_NAME="${IMAGE_NAME:-ipaharbor}"
 TAG="${TAG:-latest}"
@@ -61,28 +61,39 @@ if [[ ! -d "$SERVER_DIR" ]]; then
 fi
 
 if [[ "$FETCH" -eq 1 ]]; then
-  if [[ ! -x "$DL_SCRIPT" ]]; then
-    echo "无法执行: $DL_SCRIPT（可先 chmod +x dl_latest.sh）"
+  if [[ ! -x "$BUILD_IPATOOL_SCRIPT" ]]; then
+    echo "无法执行: $BUILD_IPATOOL_SCRIPT（可先 chmod +x build_ipatool_zh.sh）"
     exit 1
   fi
-  echo "执行 dl_latest.sh 拉取 ipatool …"
-  "$DL_SCRIPT"
+  echo "执行 build_ipatool_zh.sh 从源码编译 ipatool …"
+  "$BUILD_IPATOOL_SCRIPT" --choice 1
 fi
 
 # Dockerfile 需要 bin 下对应架构的 ipatool *.tar.gz
 if ! compgen -G "$BIN_DIR/ipatool-*-linux-*.tar.gz" > /dev/null; then
   echo "未在 $BIN_DIR 发现 ipatool-*-linux-*.tar.gz"
-  echo "请先运行: ./dl_latest.sh 或使用 $0 --fetch"
+  echo "请先运行: ./build_ipatool_zh.sh 或使用 $0 --fetch"
   exit 1
 fi
 
 printf '开始构建镜像: %s（当前目录: %s）\n' "${FULL_IMAGE}" "${SERVER_DIR}"
 cd "${SERVER_DIR}"
 
+if [[ -z "${APP_VERSION:-}" ]]; then
+  if APP_VERSION="$(git -C "${REPO_ROOT}" describe --tags --always 2>/dev/null)"; then
+    APP_VERSION="${APP_VERSION#v}"
+  else
+    APP_VERSION="$(node -p "require('./package.json').version")"
+  fi
+fi
+printf '应用版本: %s\n' "${APP_VERSION}"
+
+BUILD_ARGS=(--build-arg "APP_VERSION=${APP_VERSION}")
+
 if [[ ${#PLATFORM_ARG[@]} -gt 0 ]]; then
-  docker build "${PLATFORM_ARG[@]}" -t "${FULL_IMAGE}" --load .
+  docker build "${PLATFORM_ARG[@]}" "${BUILD_ARGS[@]}" -t "${FULL_IMAGE}" --load .
 else
-  docker build -t "${FULL_IMAGE}" --load .
+  docker build "${BUILD_ARGS[@]}" -t "${FULL_IMAGE}" --load .
 fi
 
 printf '本地镜像已构建完成: %s\n' "${FULL_IMAGE}"

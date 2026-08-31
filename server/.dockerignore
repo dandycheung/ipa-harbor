@@ -10,6 +10,7 @@ yarn-error.log*
 .cursorignore
 nodemon.json
 README.md
+.cache/
 
 # git 相关
 .git/
@@ -26,6 +27,11 @@ data/**
 
 # ipatool源码目录
 ipatool/
+
+# bin 目录：镜像构建时从 tar.gz 解压 Linux 版，排除本地 macOS 二进制与备份
+bin/ipatool
+bin/ipatool.bak.*
+bin/*.sha256sum
 
 # 系统文件
 .DS_Store

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Stack, Input, Button, Textarea, Typography } from '@mui/joy';
+import { Box, Stack, Input, Button, Textarea, Typography, IconButton } from '@mui/joy';
 import Dialog from './Dialog';
 import RegionSelector from './RegionSelector';
-import { getAppDetails, downloadApp } from '../utils/api';
+import { getAppDetails, downloadApp, isRateLimitError } from '../utils/api';
 import Swal from 'sweetalert2';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '../contexts/AppContext';
@@ -11,8 +11,24 @@ import { Add } from '@mui/icons-material';
 const STORAGE_KEY = 'new_download_memory';
 
 // 导出按钮组件
-export function NewDownloadButton({ onClick }) {
+export function NewDownloadButton({ onClick, compact = false }) {
     const { t } = useTranslation();
+
+    if (compact) {
+        return (
+            <IconButton
+                variant="soft"
+                color="primary"
+                size="sm"
+                onClick={onClick}
+                title={t('ui.newDownload')}
+                sx={{ '--IconButton-size': '36px', flexShrink: 0 }}
+            >
+                <Add sx={{ fontSize: 20 }} />
+            </IconButton>
+        );
+    }
+
     return (
         <Button
             variant="soft"
@@ -140,6 +156,7 @@ export default function NewDownloadDialog({ isOpen, onClose }) {
                 throw new Error(downloadResponse.message || '创建下载任务失败');
             }
         } catch (error) {
+            if (isRateLimitError(error)) return;
             console.error('下载失败:', error);
             Swal.fire({
                 icon: 'error',
@@ -287,6 +304,8 @@ export default function NewDownloadDialog({ isOpen, onClose }) {
                     }
                 }}
                 currentRegion={user?.region}
+                storeRegion={user?.storeRegion}
+                regionSource={user?.regionSource}
             />
         </>
     );

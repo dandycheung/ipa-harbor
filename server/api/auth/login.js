@@ -1,51 +1,62 @@
 const { exec } = require('child_process');
 const path = require('path');
+const { enrichUserData } = require('../../utils/userRegion');
+const { parseIpatoolOutput } = require('../../utils/ipatoolOutput');
+const { clearIpatoolAccountCache } = require('../../utils/ipatoolAccount');
 
-// ipatool二进制文件路径
 const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
 const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
 
+/** 首次登录可能较慢，适当延长超时 */
+const LOGIN_TIMEOUT_MS = 180000;
+const INFO_TIMEOUT_MS = 30000;
+
 /**
- * 执行ipatool命令的通用函数
+ * 执行 ipatool 命令并解析 JSON 输出
  * @param {string} command - 要执行的命令
+ * @param {number} timeoutMs - 超时时间（毫秒）
  * @returns {Promise} 返回Promise对象
  */
-function executeIpatool(command) {
+function executeIpatool(command, timeoutMs = INFO_TIMEOUT_MS) {
     return new Promise((resolve, reject) => {
-        exec(command, { timeout: 30000 }, (error, stdout, stderr) => {
-            if (error) {
-                // 检查是否是需要2FA的错误
-                if (stderr.includes('2FA code is required') || stdout.includes('2FA code is required')) {
-                    resolve({
-                        success: false,
-                        needsTwoFactor: true,
-                        message: '需要二次验证码',
-                        rawOutput: stdout || stderr
-                    });
-                } else {
-                    reject({
-                        success: false,
-                        error: error.message,
-                        stderr: stderr,
-                        stdout: stdout
-                    });
-                }
-            } else {
-                try {
-                    // 尝试解析JSON输出
-                    const result = JSON.parse(stdout);
-                    resolve({
-                        success: true,
-                        data: result
-                    });
-                } catch (parseError) {
-                    // 如果不是JSON格式，返回原始输出
-                    resolve({
-                        success: true,
-                        rawOutput: stdout
-                    });
-                }
+        exec(command, { timeout: timeoutMs }, (error, stdout, stderr) => {
+            const parsed = parseIpatoolOutput(stdout, stderr);
+
+            if (parsed.needsTwoFactor) {
+                resolve({
+                    success: false,
+                    needsTwoFactor: true,
+                    message: parsed.message || '需要二次验证码',
+                    rawOutput: parsed.rawOutput,
+                });
+                return;
             }
+
+            if (parsed.success && parsed.data) {
+                resolve({
+                    success: true,
+                    data: parsed.data,
+                });
+                return;
+            }
+
+            if (error || !parsed.success) {
+                reject({
+                    success: false,
+                    error: parsed.error || error?.message || '执行命令失败',
+                    stderr,
+                    stdout,
+                    rawOutput: parsed.rawOutput,
+                });
+                return;
+            }
+
+            reject({
+                success: false,
+                error: '未能解析 ipatool 响应',
+                stderr,
+                stdout,
+            });
         });
     });
 }
@@ -76,73 +87,62 @@ async function loginHandler(req, res) {
         console.log(`执行登录命令: ${command.replace(password, '***').replace(twoFactor || '', '***')}`);
 
         try {
-            const result = await executeIpatool(command);
+            const result = await executeIpatool(command, LOGIN_TIMEOUT_MS);
 
-            if (result.success) {
-                // 检查返回的数据中是否包含2FA要求
-                const resultData = result.data || {};
-                if (resultData.message && resultData.message.includes('2FA code is required')) {
-                    // 处理message，移除分号后的内容
-                    const cleanMessage = resultData.message.split(';')[0];
-                    return res.status(200).json({
-                        success: false,
-                        needsTwoFactor: true,
-                        message: '请求错误 / 请输入二次验证码',
-                        data: {
-                            ...resultData,
-                            message: cleanMessage
-                        }
-                    });
-                }
-
-                // 真正的登录成功，获取用户信息
-                const infoCommand = `"${IPATOOL_PATH}" auth info --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
-
-                try {
-                    const infoResult = await executeIpatool(infoCommand);
-
-                    if (infoResult.success) {
-                        return res.json({
-                            success: true,
-                            message: '登录成功',
-                            data: infoResult.data
-                        });
-                    } else {
-                        // 登录成功但获取信息失败
-                        return res.json({
-                            success: true,
-                            message: '登录成功，但获取用户信息失败',
-                            data: result.data || result.rawOutput
-                        });
-                    }
-                } catch (infoError) {
-                    // 登录成功但获取信息出错
-                    return res.json({
-                        success: true,
-                        message: '登录成功，但获取用户信息时出错',
-                        data: result.data || result.rawOutput
-                    });
-                }
-            } else if (result.needsTwoFactor) {
-                // 需要二次验证
+            if (result.needsTwoFactor) {
                 return res.status(200).json({
                     success: false,
                     needsTwoFactor: true,
                     message: '请求错误 / 请输入二次验证码'
                 });
-            } else {
-                // 其他登录失败情况
+            }
+
+            if (!result.success || !result.data?.email) {
                 return res.status(401).json({
                     success: false,
                     message: '登录失败',
-                    error: result.error || '未知错误'
+                    error: result.error || '未能获取账号信息'
                 });
             }
-        } catch (execError) {
-            console.error('执行ipatool命令时出错:', execError?.stdout);
 
-            // 检查错误信息中是否包含2FA相关内容
-            if (execError.stderr && (execError.stderr.includes('2FA') || execError.stderr.includes('two-factor'))) {
+            clearIpatoolAccountCache();
+
+            const infoCommand = `"${IPATOOL_PATH}" auth info --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
+
+            try {
+                const infoResult = await executeIpatool(infoCommand, INFO_TIMEOUT_MS);
+
+                if (infoResult.success && infoResult.data?.email) {
+                    const userData = await enrichUserData(infoResult.data);
+                    return res.json({
+                        success: true,
+                        message: '登录成功',
+                        data: userData
+                    });
+                }
+            } catch (infoError) {
+                console.error('登录后获取用户信息失败:', infoError?.error || infoError?.message);
+            }
+
+            // ipatool 已登录但 info 暂时不可用，使用 login 输出中的账号信息
+            const userData = await enrichUserData(result.data);
+            if (userData.email) {
+                return res.json({
+                    success: true,
+                    message: '登录成功',
+                    data: userData
+                });
+            }
+
+            return res.status(401).json({
+                success: false,
+                message: '登录失败，未能获取用户信息'
+            });
+        } catch (execError) {
+            console.error('执行ipatool命令时出错:', execError?.stdout || execError?.error);
+
+            const combinedOutput = `${execError.stdout || ''}\n${execError.stderr || ''}`;
+            if (combinedOutput.includes('2FA code is required')) {
                 return res.status(200).json({
                     success: false,
                     needsTwoFactor: true,
@@ -152,13 +152,12 @@ async function loginHandler(req, res) {
 
             return res.status(500).json({
                 success: false,
-                message: execError?.stdout || 'APPLE ID 登录过程中发生错误',
-                error: execError.message || '执行命令失败'
+                message: execError?.error || execError?.stdout || 'APPLE ID 登录过程中发生错误',
+                error: execError.error || '执行命令失败'
             });
         }
 
     } catch (error) {
-        // console.error('登录错误:', error);
         return res.status(500).json({
             success: false,
             message: '服务器内部错误',

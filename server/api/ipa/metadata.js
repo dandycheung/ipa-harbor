@@ -3,6 +3,16 @@ const plist = require('plist');
 const bplist = require('bplist-parser');
 const fs = require('fs');
 const path = require('path');
+const { resolveItemId } = require('../../utils/ipaFileName');
+
+function applyItemIdFromFileName(metadata, fileName) {
+    const itemId = resolveItemId(metadata, fileName);
+    if (itemId) {
+        metadata.itemId = itemId;
+    }
+
+    return metadata;
+}
 
 /**
  * 解析IPA文件中的 iTunesMetadata.plist
@@ -24,7 +34,7 @@ function parseIpaMetadata(fileName) {
         if (fs.existsSync(jsonPath)) {
             try {
                 const existingJson = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
-                return resolve(existingJson);
+                return resolve(applyItemIdFromFileName(existingJson, fileName));
             } catch (error) {
                 console.log('读取现有JSON文件失败，重新解析IPA');
             }
@@ -81,6 +91,8 @@ function parseIpaMetadata(fileName) {
                                         throw new Error(`解析XML plist失败: ${xmlError.message}`);
                                     }
                                 }
+
+                                applyItemIdFromFileName(metadata, fileName);
 
                                 // 保存为JSON文件
                                 const jsonData = JSON.stringify(metadata, null, 2);

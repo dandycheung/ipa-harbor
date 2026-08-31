@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
     Modal,
-    ModalDialog,
     ModalClose,
     Stack,
     Button,
@@ -10,7 +9,8 @@ import {
     ListItemContent,
     Typography
 } from '@mui/joy';
-import { setUserRegion } from '../utils/api';
+import ResponsiveModalDialog from './ResponsiveModalDialog';
+import { setUserRegion, isRateLimitError } from '../utils/api';
 import Swal from 'sweetalert2';
 import { useTranslation } from 'react-i18next';
 
@@ -785,17 +785,27 @@ const REGION = [
     }
 ]
 
-export default function RegionSelector({ open, onClose, currentRegion }) {
+export default function RegionSelector({ open, onClose, currentRegion, storeRegion, regionSource }) {
     const { t } = useTranslation();
     const [selectedRegion, setSelectedRegion] = useState(null);
     const [loading, setLoading] = useState(false);
 
+    const storeRegionOption = storeRegion
+        ? REGION.find((c) => c.code === storeRegion) || null
+        : null;
+    const isManualOverride = regionSource === 'manual' && !!storeRegion;
+
     useEffect(() => {
-        if (open && currentRegion) {
-            const region = REGION.find(c => c.code === currentRegion);
-            setSelectedRegion(region || null);
+        if (open) {
+            const effectiveCode = currentRegion || storeRegion;
+            if (effectiveCode) {
+                const region = REGION.find(c => c.code === effectiveCode);
+                setSelectedRegion(region || null);
+            } else {
+                setSelectedRegion(null);
+            }
         }
-    }, [open, currentRegion]);
+    }, [open, currentRegion, storeRegion]);
 
     const handleSave = async () => {
         if (!selectedRegion) {
@@ -817,9 +827,9 @@ export default function RegionSelector({ open, onClose, currentRegion }) {
                 timer: 2000,
                 showConfirmButton: false
             });
-            // 传递更新后的用户数据
             onClose(response.data);
         } catch (error) {
+            if (isRateLimitError(error)) return;
             Swal.fire({
                 icon: 'error',
                 title: t('ui.failedToUpdateRegion'),
@@ -831,34 +841,49 @@ export default function RegionSelector({ open, onClose, currentRegion }) {
         }
     };
 
-    const handleClear = async () => {
-        setLoading(true);
-        try {
-            const response = await setUserRegion('');
-            Swal.fire({
-                icon: 'success',
-                title: t('ui.regionCleared'),
-                text: t('ui.usingDefaultRegion'),
-                timer: 2000,
-                showConfirmButton: false
-            });
-            setSelectedRegion(null);
-            onClose(response.data);
-        } catch (error) {
-            Swal.fire({
-                icon: 'error',
-                title: t('ui.failedToClearRegion'),
-                text: error.message,
-                confirmButtonText: t('ui.ok')
-            });
-        } finally {
-            setLoading(false);
+    const handleRestore = async () => {
+        if (!storeRegionOption) {
+            return;
         }
+
+        // 已保存的手动覆盖：请求后端清除，恢复为账号 storefront
+        if (isManualOverride) {
+            setLoading(true);
+            try {
+                const response = await setUserRegion('');
+                Swal.fire({
+                    icon: 'success',
+                    title: t('ui.regionRestored'),
+                    text: t('ui.regionRestoredTo', {
+                        name: storeRegionOption.name,
+                        code: storeRegionOption.code.toUpperCase(),
+                    }),
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+                setSelectedRegion(storeRegionOption);
+                onClose(response.data);
+            } catch (error) {
+                if (isRateLimitError(error)) return;
+                Swal.fire({
+                    icon: 'error',
+                    title: t('ui.failedToRestoreRegion'),
+                    text: error.message,
+                    confirmButtonText: t('ui.ok')
+                });
+            } finally {
+                setLoading(false);
+            }
+            return;
+        }
+
+        // 未保存：仅还原选择器中的选项
+        setSelectedRegion(storeRegionOption);
     };
 
     return (
         <Modal open={open} onClose={() => onClose(false)}>
-            <ModalDialog sx={{ minWidth: 400, maxWidth: 540 }}>
+            <ResponsiveModalDialog sx={{ minWidth: 400, maxWidth: 540 }}>
                 <ModalClose />
                 <Typography level="h4" sx={{ mb: 2 }}>
                     {t('ui.specifyRegionTitle')}
@@ -868,6 +893,15 @@ export default function RegionSelector({ open, onClose, currentRegion }) {
                     <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
                         {t('ui.specifyRegionDescription')}
                     </Typography>
+
+                    {storeRegionOption && (
+                        <Typography level="body-sm" sx={{ color: 'text.tertiary' }}>
+                            {t('ui.accountStoreRegion', { region: storeRegionOption.code.toUpperCase() })}
+                            {isManualOverride && (
+                                <> · {t('ui.manualRegionOverride')}</>
+                            )}
+                        </Typography>
+                    )}
 
                     <Autocomplete
                         placeholder={t('ui.searchCountryPlaceholder')}
@@ -902,34 +936,37 @@ export default function RegionSelector({ open, onClose, currentRegion }) {
                     />
 
                     <Stack direction="column" spacing={1} justifyContent="flex-end">
-
                         <Button
                             onClick={handleSave}
                             loading={loading}
                         >
                             {t('ui.save')}
                         </Button>
-                        {currentRegion && (
+
+                        <Stack direction="row" spacing={1} justifyContent="flex-end">
+                            {storeRegionOption && (
+                                <Button
+                                    variant="outlined"
+                                    color="neutral"
+                                    onClick={handleRestore}
+                                    loading={loading}
+                                    sx={{ flex: 1 }}
+                                >
+                                    {t('ui.restore')}
+                                </Button>
+                            )}
                             <Button
-                                variant="soft"
-                                color="success"
-                                onClick={handleClear}
-                                loading={loading}
-                                sx={{ mr: 'auto' }}
+                                variant="outlined"
+                                color="neutral"
+                                onClick={() => onClose(false)}
+                                sx={{ flex: storeRegionOption ? 1 : undefined, ml: storeRegionOption ? 0 : 'auto' }}
                             >
-                                {t('ui.clear')}
+                                {t('ui.cancel')}
                             </Button>
-                        )}
-                        <Button
-                            variant="outlined"
-                            color="neutral"
-                            onClick={() => onClose(false)}
-                        >
-                            {t('ui.cancel')}
-                        </Button>
+                        </Stack>
                     </Stack>
                 </Stack>
-            </ModalDialog>
+            </ResponsiveModalDialog>
         </Modal>
     );
 }

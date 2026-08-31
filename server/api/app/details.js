@@ -61,16 +61,9 @@ async function detailsHandler(req, res) {
             });
         }
 
-        // 获取用户设置的地区（通过 ipatool 获取当前用户邮箱）
-        let userRegion = null;
-        try {
-            const infoCommand = `"${IPATOOL_PATH}" auth info --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
-            const infoResult = await executeIpatool(infoCommand);
-            if (infoResult.success && infoResult.data?.email) {
-                userRegion = global.userRegions?.get(infoResult.data.email);
-            }
-        } catch (error) {
-        }
+        // 获取用户设置的地区
+        const { getEffectiveRegion } = require('../../utils/userRegion');
+        const userRegion = await getEffectiveRegion();
 
         // 构建iTunes API URL，支持地区参数
         let itunesUrl;
