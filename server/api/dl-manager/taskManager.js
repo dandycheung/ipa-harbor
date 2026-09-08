@@ -33,7 +33,7 @@ class TaskManager {
     // 创建新任务
     createTask(appId, versionId, bundleId, actualVersionId = null) {
         // 清理已存在的相同应用和版本的任务和文件
-        this.cleanupExistingTasks(appId, versionId);
+        this.cleanupExistingTasks(appId, versionId, actualVersionId);
 
         const taskId = uuidv4();
         const task = {
@@ -60,7 +60,7 @@ class TaskManager {
     }
 
     // 清理已存在的相同应用和版本的任务和文件
-    cleanupExistingTasks(appId, versionId) {
+    cleanupExistingTasks(appId, versionId, actualVersionId = null) {
         // 查找所有相同appId和versionId的任务
         const existingTasks = Array.from(this.tasks.values()).filter(
             task => task.appId === appId && task.versionId === versionId
@@ -77,35 +77,43 @@ class TaskManager {
         }
 
         // 清理data目录中的相关文件
-        this.cleanupDataFiles(appId, versionId);
+        this.cleanupDataFiles(appId, versionId, actualVersionId);
+    }
+
+    buildTaskFileName(appId, versionId, actualVersionId = null) {
+        const resolvedVersionId = actualVersionId && actualVersionId !== 'latest'
+            ? actualVersionId
+            : versionId;
+        return `${appId}_${resolvedVersionId}.ipa`;
     }
 
     // 清理data目录中的相关文件
-    cleanupDataFiles(appId, versionId) {
+    cleanupDataFiles(appId, versionId, actualVersionId = null) {
         try {
-            // 确保data目录存在
             if (!fs.existsSync(DATA_DIR)) {
                 return;
             }
 
-            // 生成可能的文件名
-            const fileName = `${appId}_${versionId}.ipa`;
-            const jsonFileName = `${appId}_${versionId}.json`;
+            const fileName = this.buildTaskFileName(appId, versionId, actualVersionId);
+            const jsonFileName = fileName.replace(/\.ipa$/, '.json');
+            const legacyFileName = `${appId}_${versionId}.ipa`;
+            const legacyJsonFileName = `${appId}_${versionId}.json`;
 
-            const ipaPath = path.join(DATA_DIR, fileName);
-            const jsonPath = path.join(DATA_DIR, jsonFileName);
+            [fileName, legacyFileName].forEach((name) => {
+                const ipaPath = path.join(DATA_DIR, name);
+                if (fs.existsSync(ipaPath)) {
+                    fs.unlinkSync(ipaPath);
+                    console.log(`删除已存在的IPA文件: ${name}`);
+                }
+            });
 
-            // 删除IPA文件
-            if (fs.existsSync(ipaPath)) {
-                fs.unlinkSync(ipaPath);
-                console.log(`删除已存在的IPA文件: ${fileName}`);
-            }
-
-            // 删除JSON文件
-            if (fs.existsSync(jsonPath)) {
-                fs.unlinkSync(jsonPath);
-                console.log(`删除已存在的JSON文件: ${jsonFileName}`);
-            }
+            [jsonFileName, legacyJsonFileName].forEach((name) => {
+                const jsonPath = path.join(DATA_DIR, name);
+                if (fs.existsSync(jsonPath)) {
+                    fs.unlinkSync(jsonPath);
+                    console.log(`删除已存在的JSON文件: ${name}`);
+                }
+            });
         } catch (error) {
             console.error('清理data目录文件失败:', error);
         }
@@ -136,8 +144,7 @@ class TaskManager {
             fs.mkdirSync(DATA_DIR, { recursive: true });
         }
 
-        // 生成文件名
-        const fileName = `${task.appId}_${task.versionId}.ipa`;
+        const fileName = this.buildTaskFileName(task.appId, task.versionId, task.actualVersionId);
         const filePath = path.join(DATA_DIR, fileName);
 
         const command = [

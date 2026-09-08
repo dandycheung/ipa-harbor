@@ -23,7 +23,9 @@ import {
 } from '@mui/joy';
 import { Star, Download, Category, Person, History, AccountBalanceWallet, Delete, Refresh, InstallMobile, LabelImportantOutline } from '@mui/icons-material';
 import { tabClasses } from '@mui/joy/Tab';
-import { getAppVersions, purchaseApp, downloadApp, deleteTask, getAppInstallPackageUrl, getAppDownloadPackageUrl, isRateLimitError } from '../utils/api';
+import { getAppVersions, purchaseApp, downloadApp, deleteTask, getAppInstallPackageUrl, isRateLimitError } from '../utils/api';
+import { downloadIpaWithTemplate } from '../utils/downloadIpa';
+import { parseStorageFileName } from '../utils/filenameTemplate';
 import { useApp } from '../contexts/AppContext';
 import Swal from 'sweetalert2';
 import isValidDomain from 'is-valid-domain';
@@ -41,7 +43,7 @@ export default function AppDetail({ app }) {
     const [dataSource, setDataSource] = useState(null); // 数据源标记
     const [activeTab, setActiveTab] = useState(0); // 管理tabs状态
 
-    const { taskList, user } = useApp();
+    const { taskList, user, settings, fileList } = useApp();
 
     useEffect(() => {
         setActiveTab(0);
@@ -352,6 +354,66 @@ export default function AppDetail({ app }) {
         }
     };
 
+    const findStorageFileName = (versionId) => {
+        const appId = String(app.trackId);
+        const completedTasks = taskList.completed || [];
+        const matchedTask = completedTasks.find((task) => (
+            String(task.appId) === appId
+            && (task.versionId === versionId || (versionId === 'latest' && task.versionId === 'latest'))
+        ));
+
+        if (matchedTask?.fileName) {
+            return matchedTask.fileName;
+        }
+
+        if (versionId !== 'latest') {
+            return `${appId}_${versionId}.ipa`;
+        }
+
+        const matchedFile = fileList.files?.find((file) => (
+            String(file.itemId) === appId || file.name.startsWith(`${appId}_`)
+        ));
+
+        return matchedFile?.name || `${appId}_${versionId}.ipa`;
+    };
+
+    const buildDownloadMetadata = (storageFileName, versionId) => {
+        const matchedFile = fileList.files?.find((file) => file.name === storageFileName);
+        const { versionId: storageVersionId } = parseStorageFileName(storageFileName);
+
+        return {
+            itemId: matchedFile?.itemId || String(app.trackId),
+            softwareVersionExternalIdentifier: matchedFile?.softwareVersionExternalIdentifier
+                || (versionId === 'latest' ? storageVersionId : versionId),
+            softwareVersionBundleId: matchedFile?.softwareVersionBundleId || app.bundleId,
+            bundleVersion: matchedFile?.bundleVersion,
+            bundleShortVersionString: matchedFile?.bundleShortVersionString || app.version,
+            bundleDisplayName: matchedFile?.bundleDisplayName || app.trackName,
+            releaseDateTime: matchedFile?.releaseDate,
+        };
+    };
+
+    const handleSaveLocalIpa = async (versionId) => {
+        try {
+            const storageFileName = findStorageFileName(versionId);
+            await downloadIpaWithTemplate({
+                storageFileName,
+                template: settings.downloadFileNameTemplate,
+                metadata: buildDownloadMetadata(storageFileName, versionId),
+            });
+        } catch (error) {
+            if (isRateLimitError(error)) {
+                return;
+            }
+
+            Swal.fire({
+                icon: 'error',
+                title: t('ui.downloadFailed'),
+                text: error.message,
+                confirmButtonText: t('ui.confirm'),
+            });
+        }
+    };
 
     // 删除任务
     const handleDeleteTask = async (taskId) => {
@@ -472,7 +534,7 @@ export default function AppDetail({ app }) {
                                 console.log(isFQDN, isSecureContext);
                                 // 只有isFQDN为true时，才提示用户，否则直接跳转
                                 if (forceDownload || !isSecureContext || !isFQDN) {
-                                    window.open(getAppDownloadPackageUrl(app.trackId, 'latest'), '_blank');
+                                    handleSaveLocalIpa('latest');
                                     return;
                                 }
                                 Swal.fire({
@@ -497,7 +559,7 @@ export default function AppDetail({ app }) {
            ${t('ui.install')}
         </a>
 
-        <a href="${getAppDownloadPackageUrl(app.trackId, 'latest')}"
+        <button id="download-ipa-btn"
                   class="swal2-cancel swal2-styled"
  style="
              display:inline-block;
@@ -507,12 +569,19 @@ export default function AppDetail({ app }) {
              border-radius:4px;
              text-decoration:none;
              font-size:14px;
+             border:none;
+             cursor:pointer;
            ">
            ${t('ui.downloadIPA')}
-        </a>
+        </button>
       </div>
     `,
-
+                                    didOpen: () => {
+                                        document.getElementById('download-ipa-btn')?.addEventListener('click', () => {
+                                            Swal.close();
+                                            handleSaveLocalIpa('latest');
+                                        });
+                                    },
                                 });
                             }}>{t('ui.install')}</Button>
                         </Box>
@@ -708,10 +777,13 @@ export default function AppDetail({ app }) {
                                     <Button size="sm" color="success" startDecorator={<InstallMobile />}>安装</Button>
                                 </Link>
                             </Tooltip> */}
-                            <Link href={`${getAppDownloadPackageUrl(app.trackId, version.versionId)}`}>
-                                {/* <Button size="sm" startDecorator={<Download />}>下载IPA</Button> */}
-                                <Button size="sm" startDecorator={<Download />}>{t('ui.downloadIPA')}</Button>
-                            </Link>
+                            <Button
+                                size="sm"
+                                startDecorator={<Download />}
+                                onClick={() => handleSaveLocalIpa(version.versionId)}
+                            >
+                                {t('ui.downloadIPA')}
+                            </Button>
                         </Stack>
                     );
 

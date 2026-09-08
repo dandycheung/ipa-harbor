@@ -57,6 +57,7 @@ class Database {
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         username TEXT UNIQUE NOT NULL,
                         password_hash TEXT NOT NULL,
+                        settings TEXT,
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                     )
@@ -71,8 +72,51 @@ class Database {
                             console.log('用户表创建成功');
                         }
 
-                        // 检查触发器是否已存在
-                        this.db.get("SELECT name FROM sqlite_master WHERE type='trigger' AND name='update_users_updated_at'", (err, triggerRow) => {
+                        this.ensureSettingsColumn()
+                            .then(() => {
+                                this.ensureUpdateTrigger(tableExists, resolve, reject);
+                            })
+                            .catch(reject);
+                    }
+                });
+            });
+        });
+    }
+
+    /**
+     * 旧版 users 表无 settings 列时补列
+     */
+    async ensureSettingsColumn() {
+        return new Promise((resolve, reject) => {
+            this.db.all('PRAGMA table_info(users)', (err, columns) => {
+                if (err) {
+                    console.error('检查 users 表结构失败:', err.message);
+                    reject(err);
+                    return;
+                }
+
+                const hasSettingsColumn = columns.some((column) => column.name === 'settings');
+                if (hasSettingsColumn) {
+                    resolve(false);
+                    return;
+                }
+
+                this.db.run('ALTER TABLE users ADD COLUMN settings TEXT', (alterErr) => {
+                    if (alterErr) {
+                        console.error('添加 settings 列失败:', alterErr.message);
+                        reject(alterErr);
+                    } else {
+                        console.log('已为 users 表添加 settings 列');
+                        resolve(true);
+                    }
+                });
+            });
+        });
+    }
+
+    ensureUpdateTrigger(tableExists, resolve, reject) {
+        // 检查触发器是否已存在
+        this.db.get("SELECT name FROM sqlite_master WHERE type='trigger' AND name='update_users_updated_at'", (err, triggerRow) => {
                             if (err) {
                                 console.error('检查触发器失败:', err.message);
                                 reject(err);
@@ -103,8 +147,44 @@ class Database {
                                 }
                             });
                         });
+    }
+
+    /**
+     * 读取用户 settings JSON
+     */
+    async getUserSettings(userId) {
+        return new Promise((resolve, reject) => {
+            this.db.get('SELECT settings FROM users WHERE id = ?', [userId], (err, row) => {
+                if (err) {
+                    reject(err);
+                } else if (!row?.settings) {
+                    resolve(null);
+                } else {
+                    try {
+                        resolve(JSON.parse(row.settings));
+                    } catch (parseErr) {
+                        console.error(`解析用户 ${userId} 的 settings 失败:`, parseErr.message);
+                        resolve(null);
                     }
-                });
+                }
+            });
+        });
+    }
+
+    /**
+     * 保存用户 settings JSON
+     */
+    async setUserSettings(userId, settings) {
+        return new Promise((resolve, reject) => {
+            const sql = 'UPDATE users SET settings = ? WHERE id = ?';
+            this.db.run(sql, [JSON.stringify(settings), userId], function (err) {
+                if (err) {
+                    reject(err);
+                } else if (this.changes === 0) {
+                    reject(new Error('用户不存在'));
+                } else {
+                    resolve(settings);
+                }
             });
         });
     }

@@ -10,6 +10,7 @@ import AdminGuard from './components/AdminGuard';
 import Home from './pages/Home';
 import DownloadManager from './pages/DownloadManager';
 import Purchases from './pages/Purchases';
+import Settings from './pages/Settings';
 import AdminLogin from './pages/AdminLogin';
 import AdminSetup from './pages/AdminSetup';
 import AppleIdLogin from './pages/AppleIdLogin';
@@ -50,6 +51,7 @@ function App() {
                 <Route index element={<Home />} />
                 <Route path="purchases" element={<Purchases />} />
                 <Route path="dl" element={<DownloadManager />} />
+                <Route path="settings" element={<Settings />} />
               </Route>
             </Routes>
           </Router>

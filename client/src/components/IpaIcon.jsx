@@ -4,7 +4,8 @@ import {
     Drawer, Button, DialogTitle, DialogContent, ModalClose, Sheet
 } from '@mui/joy';
 import MouseTooltip from './MouseTooltip';
-import { getAppIconUrl, getAppDownloadPackageUrl, deleteTask, downloadApp, isRateLimitError } from '../utils/api';
+import { getAppIconUrl, deleteTask, downloadApp, isRateLimitError } from '../utils/api';
+import { downloadIpaWithTemplate } from '../utils/downloadIpa';
 import Swal from 'sweetalert2';
 import formatFileSize from '../utils/formatFileSize.js';
 import { Close as CloseIcon, Download as DownloadIcon } from '@mui/icons-material';
@@ -78,7 +79,7 @@ function AppIcon({ appId, size = 128, disabled = false, country }) {
 
 export default function IpaIcon({ item, size = 128, isDragging = false }) {
     const { t } = useTranslation();
-    const { user } = useApp();
+    const { user, settings } = useApp();
     const [drawerOpen, setDrawerOpen] = useState(false);
     const {
         id: appId,
@@ -453,10 +454,32 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
         }
     };
 
-    const handleDownload = (e) => {
+    const handleDownload = async (e) => {
         e.stopPropagation();
-        const [appId, version] = name.replace(/\.ipa$/, '').split('_');
-        window.open(getAppDownloadPackageUrl(appId, version), '_blank');
+
+        try {
+            await downloadIpaWithTemplate({
+                storageFileName: name,
+                template: settings.downloadFileNameTemplate,
+                metadata: {
+                    itemId: displayAppId,
+                    softwareVersionExternalIdentifier,
+                    softwareVersionBundleId,
+                    bundleVersion,
+                    bundleShortVersionString,
+                    bundleDisplayName,
+                    releaseDateTime: releaseDate,
+                },
+            });
+        } catch (error) {
+            console.error('下载 IPA 失败:', error);
+            Swal.fire({
+                icon: 'error',
+                title: t('ui.downloadFailed'),
+                text: error.message,
+                confirmButtonText: t('ui.confirm'),
+            });
+        }
     };
 
     const content = (

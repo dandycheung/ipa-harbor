@@ -121,7 +121,7 @@ export default function DownloadManager() {
                 taskList[status].forEach(task => {
                     // 从任务中提取应用信息
                     const appId = task.appId || task.id;
-                    const fileName = task.fileName || `${appId}_${task.versionId || 'latest'}.ipa`;
+                    const fileName = task.fileName || `${appId}_${task.actualVersionId || task.versionId || 'latest'}.ipa`;
 
                     // 提取进度信息
                     const progressInfo = task.progress || {};
@@ -174,11 +174,11 @@ export default function DownloadManager() {
                 const existsInTasks = items.some(item => item.name === file.name);
 
                 if (!existsInTasks) {
-                    // 提取应用ID
-                    const appId = file.name.match(/^(\d+)_/)?.[1];
+                    // 优先使用 metadata 中的 itemId，兼容自定义文件名模板
+                    const appId = file.itemId || file.name.match(/^(\d+)_/)?.[1];
 
                     items.push({
-                        id: appId,
+                        id: appId || file.name,
                         name: file.name,
                         status: 'downloaded',
                         progress: 100,

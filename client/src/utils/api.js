@@ -296,6 +296,16 @@ export async function checkAppUpdate() {
 }
 
 /**
+ * 更新应用设置
+ */
+export async function updateAdminSettings(settings) {
+    return apiRequest('/v1/admin/settings', {
+        method: 'PUT',
+        body: JSON.stringify(settings),
+    });
+}
+
+/**
  * 管理员登录
  * @param {string} username - 用户名
  * @param {string} password - 密码

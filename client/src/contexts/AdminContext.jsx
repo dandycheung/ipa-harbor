@@ -18,11 +18,13 @@ export const AdminProvider = ({ children }) => {
         isLoggedIn: false,
         user: null,
         expiresAt: null,
+        settings: null,
+        settingsLoaded: false,
         loading: true,
         error: null
     });
 
-    // 检查管理员状态
+    // 检查管理员状态（同时拉取后端应用设置，避免重复请求 status）
     const checkAdminStatus = async () => {
         try {
             setAdminState(prev => ({ ...prev, loading: true, error: null }));
@@ -34,6 +36,8 @@ export const AdminProvider = ({ children }) => {
                 isLoggedIn: response.data.isLoggedIn,
                 user: response.data.user,
                 expiresAt: response.data.expiresAt,
+                settings: response.data.settings || null,
+                settingsLoaded: true,
                 loading: false
             }));
         } catch (error) {
@@ -41,9 +45,17 @@ export const AdminProvider = ({ children }) => {
             setAdminState(prev => ({
                 ...prev,
                 loading: false,
+                settingsLoaded: true,
                 error: error.message
             }));
         }
+    };
+
+    const updateAppSettings = (settings) => {
+        setAdminState(prev => ({
+            ...prev,
+            settings,
+        }));
     };
 
     // 管理员登录
@@ -117,6 +129,7 @@ export const AdminProvider = ({ children }) => {
         login,
         logout,
         checkAdminStatus,
+        updateAppSettings,
         getFormattedExpiresAt,
         isExpiringSoon
     };

@@ -14,7 +14,7 @@ import { setUserRegion, isRateLimitError } from '../utils/api';
 import Swal from 'sweetalert2';
 import { useTranslation } from 'react-i18next';
 
-const REGION = [
+export const REGION = [
     {
         "code": "bh",
         "name": "Bahrain",
@@ -883,7 +883,14 @@ export default function RegionSelector({ open, onClose, currentRegion, storeRegi
 
     return (
         <Modal open={open} onClose={() => onClose(false)}>
-            <ResponsiveModalDialog sx={{ minWidth: 400, maxWidth: 540 }}>
+            <ResponsiveModalDialog
+                sx={{
+                    width: '100%',
+                    maxWidth: 'min(540px, calc(100vw - 32px))',
+                    minWidth: { sm: 400 },
+                    boxSizing: 'border-box',
+                }}
+            >
                 <ModalClose />
                 <Typography level="h4" sx={{ mb: 2 }}>
                     {t('ui.specifyRegionTitle')}

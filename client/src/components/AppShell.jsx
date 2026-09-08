@@ -9,16 +9,14 @@ import {
     IconButton,
 } from '@mui/joy';
 import { useNavigate, useLocation, useOutlet } from 'react-router-dom';
-import { AnimatePresence, motion } from 'motion/react';
 import {
     AddToHomeScreen as AddToHomeScreenIcon,
-    Menu as MenuIcon,
-    Close as CloseIcon,
 } from '@mui/icons-material';
 import UserStatus from './UserStatus';
 import AdminStatus from './AdminStatus';
 import LanguageSwitcher from './LanguageSwitcher';
 import MobileNavMenu from './MobileNavMenu';
+import MenuToggleIcon from './MenuToggleIcon';
 import PageTransition from './PageTransition';
 import { useApp } from '../contexts/AppContext';
 import GitHubIcon from '@mui/icons-material/GitHub';
@@ -82,6 +80,7 @@ export default function AppShell() {
         { path: '/', label: t('ui.home') },
         { path: '/purchases', label: t('ui.purchasedApps') },
         { path: '/dl', label: t('ui.downloadManager'), badge: badgeInfo },
+        { path: '/settings', label: t('ui.settings') },
     ];
 
     const renderNavButton = (item) => {
@@ -197,33 +196,7 @@ export default function AppShell() {
                             aria-label={menuOpen ? t('ui.closeMenu') : t('ui.openMenu')}
                             aria-expanded={menuOpen}
                         >
-                            <AnimatePresence mode="wait" initial={false}>
-                                {menuOpen ? (
-                                    <Box
-                                        component={motion.span}
-                                        key="close"
-                                        initial={{ opacity: 0, rotate: -60, scale: 0.88 }}
-                                        animate={{ opacity: 1, rotate: 0, scale: 1 }}
-                                        exit={{ opacity: 0, rotate: 60, scale: 0.88 }}
-                                        transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
-                                        sx={{ display: 'flex' }}
-                                    >
-                                        <CloseIcon />
-                                    </Box>
-                                ) : (
-                                    <Box
-                                        component={motion.span}
-                                        key="menu"
-                                        initial={{ opacity: 0, rotate: 60, scale: 0.88 }}
-                                        animate={{ opacity: 1, rotate: 0, scale: 1 }}
-                                        exit={{ opacity: 0, rotate: -60, scale: 0.88 }}
-                                        transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
-                                        sx={{ display: 'flex' }}
-                                    >
-                                        <MenuIcon />
-                                    </Box>
-                                )}
-                            </AnimatePresence>
+                            <MenuToggleIcon open={menuOpen} />
                         </IconButton>
                     </Stack>
                 </Stack>

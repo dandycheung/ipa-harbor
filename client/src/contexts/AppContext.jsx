@@ -1,12 +1,17 @@
 import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
 import { getUserInfo } from '../utils/api';
 import { useAdmin } from './AdminContext';
+import { DEFAULT_DOWNLOAD_FILENAME_TEMPLATE, normalizeTemplate } from '../utils/filenameTemplate';
 
 const initialState = {
     user: null,
     isAuthenticated: false,
     loading: true,
     error: null,
+    settings: {
+        downloadFileNameTemplate: DEFAULT_DOWNLOAD_FILENAME_TEMPLATE,
+    },
+    settingsLoaded: false,
     // Ws 相关状态
     wsConnected: false,
     wsReconnecting: false,
@@ -36,7 +41,8 @@ const ActionTypes = {
     SET_WS_RECONNECTING: 'SET_WS_RECONNECTING',
     // 任务相关
     SET_TASK_LIST: 'SET_TASK_LIST',
-    SET_FILE_LIST: 'SET_FILE_LIST'
+    SET_FILE_LIST: 'SET_FILE_LIST',
+    SET_SETTINGS: 'SET_SETTINGS',
 };
 
 function appReducer(state, action) {
@@ -89,6 +95,18 @@ function appReducer(state, action) {
                 ...state,
                 fileList: action.payload
             };
+        case ActionTypes.SET_SETTINGS:
+            return {
+                ...state,
+                settings: {
+                    ...state.settings,
+                    ...action.payload,
+                    downloadFileNameTemplate: normalizeTemplate(
+                        action.payload.downloadFileNameTemplate || state.settings.downloadFileNameTemplate
+                    ),
+                },
+                settingsLoaded: true,
+            };
         default:
             return state;
     }
@@ -102,7 +120,12 @@ export function AppProvider({ children }) {
     const reconnectTimeoutRef = useRef(null);
     const pingIntervalRef = useRef(null);
     const adminLoggedInRef = useRef(false);
-    const { isLoggedIn: adminLoggedIn, loading: adminLoading } = useAdmin();
+    const {
+        isLoggedIn: adminLoggedIn,
+        loading: adminLoading,
+        settings: adminSettings,
+        settingsLoaded: adminSettingsLoaded,
+    } = useAdmin();
 
     // 更新管理员登录状态的ref
     adminLoggedInRef.current = adminLoggedIn;
@@ -135,6 +158,10 @@ export function AppProvider({ children }) {
 
     const refreshUser = () => {
         checkAuthStatus();
+    };
+
+    const setSettings = (nextSettings) => {
+        dispatch({ type: ActionTypes.SET_SETTINGS, payload: nextSettings });
     };
 
     // Ws 连接函数
@@ -272,6 +299,19 @@ export function AppProvider({ children }) {
         }
     };
 
+    // 复用 AdminContext 已拉取的 settings，避免重复请求 /v1/admin/status
+    useEffect(() => {
+        if (!adminSettingsLoaded) {
+            return;
+        }
+
+        if (adminSettings) {
+            dispatch({ type: ActionTypes.SET_SETTINGS, payload: adminSettings });
+        } else {
+            dispatch({ type: ActionTypes.SET_SETTINGS, payload: {} });
+        }
+    }, [adminSettings, adminSettingsLoaded]);
+
     useEffect(() => {
         // 只有在管理员已登录且不在加载状态时才执行
         if (!adminLoading && adminLoggedIn) {
@@ -300,6 +340,7 @@ export function AppProvider({ children }) {
         setUser,
         refreshUser,
         checkAuthStatus,
+        setSettings,
         connectWebSocket,
         disconnectWebSocket
     };

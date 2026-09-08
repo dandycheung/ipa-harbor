@@ -3,27 +3,37 @@ import { IconButton, Dropdown, Menu, MenuItem, MenuButton, Select, Option, Stack
 import { useTranslation } from 'react-i18next';
 import { languages, normalizeLanguageCode } from '../i18n';
 import TranslateIcon from '@mui/icons-material/Translate';
+
 /**
  * 语言切换
  * @param {string} variant - 'icon' | 'select' | 'buttons'
  * @param {string} size - 'sm', 'md', 'lg'
  * @param {boolean} fullWidth
+ * @param {string} value
+ * @param {Function} onChange 
  * @param {object} sx
  */
 export default function LanguageSwitcher({
     variant = 'icon',
     size = 'sm',
     fullWidth = false,
+    value,
+    onChange,
     sx = {}
 }) {
     const { i18n } = useTranslation();
 
     const changeLanguage = (lng) => {
+        if (onChange) {
+            onChange(lng);
+            return;
+        }
+
         i18n.changeLanguage(lng);
         localStorage.setItem('language', lng);
     };
 
-    const currentLanguage = normalizeLanguageCode(i18n.language);
+    const currentLanguage = normalizeLanguageCode(value || i18n.language);
 
     if (variant === 'select') {
         const handleChange = (event, newValue) => {
