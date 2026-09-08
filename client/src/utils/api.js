@@ -279,6 +279,14 @@ export function getAppDownloadPackageUrl(appId, versionId) {
     return `${API_BASE_URL}/v1/ipa/getpackage/${appId}_${versionId}.ipa`;
 }
 
+/**
+ * 通过磁盘存储文件名获取下载 URL
+ * @param {string} fileName - 如 6766042246_887851211.ipa
+ */
+export function getAppDownloadPackageUrlByFileName(fileName) {
+    return `${API_BASE_URL}/v1/ipa/getpackage/${fileName}`;
+}
+
 // ===== 管理员认证相关API =====
 
 /**

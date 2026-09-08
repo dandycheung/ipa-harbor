@@ -8,6 +8,8 @@ const https = require('https');
 const { metadataHandler, parseIpaMetadata } = require('./metadata');
 
 const { getEffectiveRegion } = require('../../utils/userRegion');
+const { optionalAuth } = require('../../middleware/auth');
+const { buildContentDisposition, resolveDownloadFileName } = require('../../utils/filenameTemplate');
 
 // 获取应用图标URL的辅助函数
 async function getAppIconUrls(appId, userRegion = null) {
@@ -161,7 +163,7 @@ router.get('/install-package/:fileName/manifest.plist', async (req, res) => {
     }
 });
 
-router.get('/getpackage/:fileName', (req, res) => {
+router.get('/getpackage/:fileName', optionalAuth, async (req, res) => {
     const { fileName } = req.params;
 
     if (!fileName) {
@@ -176,6 +178,14 @@ router.get('/getpackage/:fileName', (req, res) => {
         return res.status(404).send('File not found');
     }
 
+    let contentDisposition = 'attachment; filename="app.ipa"';
+    try {
+        const displayName = await resolveDownloadFileName(fileName, req.user?.id);
+        contentDisposition = buildContentDisposition(displayName);
+    } catch (error) {
+        console.warn('解析下载文件名失败，使用默认文件名:', error.message);
+    }
+
     const stat = fs.statSync(filePath);
     const fileSize = stat.size;
     const range = req.headers.range;
@@ -184,7 +194,7 @@ router.get('/getpackage/:fileName', (req, res) => {
         res.writeHead(200, {
             'Content-Length': fileSize,
             'Content-Type': 'application/octet-stream',
-            'Content-Disposition': `attachment; filename="app.ipa"`,
+            'Content-Disposition': contentDisposition,
         });
         fs.createReadStream(filePath).pipe(res);
         return;
@@ -202,13 +212,12 @@ router.get('/getpackage/:fileName', (req, res) => {
     const chunkSize = end - start + 1;
     const fileStream = fs.createReadStream(filePath, { start, end });
 
-
     res.writeHead(206, {
         'Content-Range': `bytes ${start}-${end}/${fileSize}`,
         'Accept-Ranges': 'bytes',
         'Content-Length': chunkSize,
         'Content-Type': 'application/octet-stream',
-        'Content-Disposition': `attachment; filename="app.ipa"`,
+        'Content-Disposition': contentDisposition,
     });
 
     fileStream.pipe(res);

@@ -23,9 +23,7 @@ import {
 } from '@mui/joy';
 import { Star, Download, Category, Person, History, AccountBalanceWallet, Delete, Refresh, InstallMobile, LabelImportantOutline } from '@mui/icons-material';
 import { tabClasses } from '@mui/joy/Tab';
-import { getAppVersions, purchaseApp, downloadApp, deleteTask, getAppInstallPackageUrl, isRateLimitError } from '../utils/api';
-import { downloadIpaWithTemplate } from '../utils/downloadIpa';
-import { parseStorageFileName } from '../utils/filenameTemplate';
+import { getAppVersions, purchaseApp, downloadApp, deleteTask, getAppInstallPackageUrl, getAppDownloadPackageUrlByFileName, isRateLimitError } from '../utils/api';
 import { useApp } from '../contexts/AppContext';
 import Swal from 'sweetalert2';
 import isValidDomain from 'is-valid-domain';
@@ -42,15 +40,52 @@ export default function AppDetail({ app }) {
     const [downloadingVersions, setDownloadingVersions] = useState(new Set());
     const [dataSource, setDataSource] = useState(null); // 数据源标记
     const [activeTab, setActiveTab] = useState(0); // 管理tabs状态
+    const [storeLatestVersionId, setStoreLatestVersionId] = useState(null);
 
-    const { taskList, user, settings, fileList } = useApp();
+    const { taskList, user, fileList } = useApp();
+
+    const extractLatestVersionId = (versionObjects = []) => {
+        const latest = versionObjects.find((item) => item.bundleVersion === app.version) || versionObjects[0];
+        return latest?.versionId != null ? String(latest.versionId) : null;
+    };
 
     useEffect(() => {
         setActiveTab(0);
         setVersions([]);
         setVersionsError(null);
         setDataSource(null);
+        setStoreLatestVersionId(null);
     }, [app?.trackId]);
+
+    useEffect(() => {
+        if (!app?.trackId) {
+            return undefined;
+        }
+
+        let cancelled = false;
+
+        const loadStoreLatestVersionId = async () => {
+            try {
+                const response = await getAppVersions(app.trackId);
+                if (cancelled || !response.success) {
+                    return;
+                }
+
+                const versionObjects = response.data.externalVersionIdentifiers || [];
+                setStoreLatestVersionId(extractLatestVersionId(versionObjects));
+            } catch (error) {
+                if (!isRateLimitError(error)) {
+                    console.warn('获取 App Store 最新版本 ID 失败:', error.message);
+                }
+            }
+        };
+
+        loadStoreLatestVersionId();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [app?.trackId, app?.version]);
 
     const handleVersionsError = async () => {
         const isFree = app.price === 0;
@@ -177,6 +212,7 @@ export default function AppDetail({ app }) {
                         : `版本 ${versionObjects.length - index}`
                 }));
                 setVersions(versionsData);
+                setStoreLatestVersionId(extractLatestVersionId(versionObjects));
                 setDataSource(response.source);
 
                 // 显示数据源信息
@@ -354,65 +390,46 @@ export default function AppDetail({ app }) {
         }
     };
 
+    const resolveVersionId = (versionId) => {
+        if (versionId !== 'latest') {
+            return String(versionId);
+        }
+
+        return storeLatestVersionId;
+    };
+
     const findStorageFileName = (versionId) => {
         const appId = String(app.trackId);
+        const resolvedId = resolveVersionId(versionId);
+
+        if (!resolvedId) {
+            return `${appId}_latest.ipa`;
+        }
+
         const completedTasks = taskList.completed || [];
         const matchedTask = completedTasks.find((task) => (
             String(task.appId) === appId
-            && (task.versionId === versionId || (versionId === 'latest' && task.versionId === 'latest'))
+            && (task.versionId === resolvedId || String(task.actualVersionId) === resolvedId)
         ));
 
         if (matchedTask?.fileName) {
             return matchedTask.fileName;
         }
 
-        if (versionId !== 'latest') {
-            return `${appId}_${versionId}.ipa`;
-        }
-
-        const matchedFile = fileList.files?.find((file) => (
-            String(file.itemId) === appId || file.name.startsWith(`${appId}_`)
-        ));
-
-        return matchedFile?.name || `${appId}_${versionId}.ipa`;
+        return `${appId}_${resolvedId}.ipa`;
     };
 
-    const buildDownloadMetadata = (storageFileName, versionId) => {
-        const matchedFile = fileList.files?.find((file) => file.name === storageFileName);
-        const { versionId: storageVersionId } = parseStorageFileName(storageFileName);
-
-        return {
-            itemId: matchedFile?.itemId || String(app.trackId),
-            softwareVersionExternalIdentifier: matchedFile?.softwareVersionExternalIdentifier
-                || (versionId === 'latest' ? storageVersionId : versionId),
-            softwareVersionBundleId: matchedFile?.softwareVersionBundleId || app.bundleId,
-            bundleVersion: matchedFile?.bundleVersion,
-            bundleShortVersionString: matchedFile?.bundleShortVersionString || app.version,
-            bundleDisplayName: matchedFile?.bundleDisplayName || app.trackName,
-            releaseDateTime: matchedFile?.releaseDate,
-        };
+    const getDownloadUrl = (versionId) => {
+        return getAppDownloadPackageUrlByFileName(findStorageFileName(versionId));
     };
 
-    const handleSaveLocalIpa = async (versionId) => {
-        try {
-            const storageFileName = findStorageFileName(versionId);
-            await downloadIpaWithTemplate({
-                storageFileName,
-                template: settings.downloadFileNameTemplate,
-                metadata: buildDownloadMetadata(storageFileName, versionId),
-            });
-        } catch (error) {
-            if (isRateLimitError(error)) {
-                return;
-            }
-
-            Swal.fire({
-                icon: 'error',
-                title: t('ui.downloadFailed'),
-                text: error.message,
-                confirmButtonText: t('ui.confirm'),
-            });
+    const getInstallUrl = (versionId) => {
+        const resolvedId = resolveVersionId(versionId);
+        if (!resolvedId) {
+            return null;
         }
+
+        return getAppInstallPackageUrl(app.trackId, resolvedId);
     };
 
     // 删除任务
@@ -453,17 +470,43 @@ export default function AppDetail({ app }) {
         }
     };
 
-    // 获取当前应用的latest版本
+    const getLocalFileForVersion = (versionId) => {
+        if (!app?.trackId || !versionId) return null;
+        const appId = String(app.trackId);
+        const resolvedId = resolveVersionId(versionId) || versionId;
+
+        return fileList.files?.find((item) => (
+            item.name === `${appId}_${resolvedId}.ipa`
+            || (String(item.itemId) === appId && String(item.softwareVersionExternalIdentifier) === String(resolvedId))
+        )) ?? null;
+    };
+
+    // 获取当前应用的 latest 版本（App Store 真正最新 build 且已下载到本地）
     const getLatestTaskInfo = () => {
         if (!app?.trackId) return null;
         const appId = String(app.trackId);
-        const fromTask = taskList?.summary?.[appId]?.latest;
-        if (fromTask) return fromTask;
+        const fromSummary = taskList?.summary?.[appId]?.latest;
 
-        const file = fileList.files?.find((item) => (
-            String(item.itemId) === appId || item.name.startsWith(`${appId}_`)
-        ));
-        return file ? { status: 'completed', taskId: null, percentage: 100, fileName: file.name } : null;
+        if (fromSummary && fromSummary.status !== 'completed') {
+            const task = [...(taskList.running || []), ...(taskList.pending || []), ...(taskList.failed || [])]
+                .find((item) => item.id === fromSummary.taskId);
+
+            return {
+                ...fromSummary,
+                fileName: task?.fileName,
+            };
+        }
+
+        if (!storeLatestVersionId) {
+            return null;
+        }
+
+        const file = getLocalFileForVersion(storeLatestVersionId);
+        if (file) {
+            return { status: 'completed', taskId: null, percentage: 100, fileName: file.name };
+        }
+
+        return null;
     };
 
     const getVersionTaskInfo = (versionId) => {
@@ -472,12 +515,13 @@ export default function AppDetail({ app }) {
         const fromTask = taskList?.summary?.[appId]?.[versionId];
         if (fromTask) return fromTask;
 
-        const file = fileList.files?.find((item) => (
-            item.name === `${appId}_${versionId}.ipa`
-            || (String(item.itemId) === appId && String(item.softwareVersionExternalIdentifier) === String(versionId))
-        ));
+        const file = getLocalFileForVersion(versionId);
         return file ? { status: 'completed', taskId: null, percentage: 100, fileName: file.name } : null;
     };
+
+    const latestLocalFile = storeLatestVersionId
+        ? getLocalFileForVersion(storeLatestVersionId)
+        : null;
 
     const renderDownloadSection = () => {
         const taskInfo = getLatestTaskInfo();
@@ -550,7 +594,7 @@ export default function AppDetail({ app }) {
                                 console.log(isFQDN, isSecureContext);
                                 // 只有isFQDN为true时，才提示用户，否则直接跳转
                                 if (forceDownload || !isSecureContext || !isFQDN) {
-                                    handleSaveLocalIpa('latest');
+                                    window.open(getDownloadUrl('latest'), '_blank');
                                     return;
                                 }
                                 Swal.fire({
@@ -561,7 +605,7 @@ export default function AppDetail({ app }) {
                                     showConfirmButton: false,
                                     html: `
       <div style="display:flex; justify-content:center; gap:12px; padding:1rem;">
-        <a href="${getAppInstallPackageUrl(app.trackId, 'latest')}"
+        <a href="${getInstallUrl('latest') || '#'}"
         class="swal2-confirm swal2-styled"
            style="
              display:inline-block;
@@ -575,7 +619,7 @@ export default function AppDetail({ app }) {
            ${t('ui.install')}
         </a>
 
-        <button id="download-ipa-btn"
+        <a href="${getDownloadUrl('latest')}"
                   class="swal2-cancel swal2-styled"
  style="
              display:inline-block;
@@ -585,19 +629,11 @@ export default function AppDetail({ app }) {
              border-radius:4px;
              text-decoration:none;
              font-size:14px;
-             border:none;
-             cursor:pointer;
            ">
            ${t('ui.downloadIPA')}
-        </button>
+        </a>
       </div>
     `,
-                                    didOpen: () => {
-                                        document.getElementById('download-ipa-btn')?.addEventListener('click', () => {
-                                            Swal.close();
-                                            handleSaveLocalIpa('latest');
-                                        });
-                                    },
                                 });
                             }}>{t('ui.install')}</Button>
                         </Box>
@@ -793,13 +829,9 @@ export default function AppDetail({ app }) {
                                     <Button size="sm" color="success" startDecorator={<InstallMobile />}>安装</Button>
                                 </Link>
                             </Tooltip> */}
-                            <Button
-                                size="sm"
-                                startDecorator={<Download />}
-                                onClick={() => handleSaveLocalIpa(version.versionId)}
-                            >
-                                {t('ui.downloadIPA')}
-                            </Button>
+                            <Link href={getDownloadUrl(version.versionId)}>
+                                <Button size="sm" startDecorator={<Download />}>{t('ui.downloadIPA')}</Button>
+                            </Link>
                         </Stack>
                     );
 
@@ -974,15 +1006,15 @@ export default function AppDetail({ app }) {
                             <Stack gap={1}>
                                 <Stack direction="row" justifyContent="space-between">
                                     <Typography level="body-sm">{t('ui.currentVersion')}:</Typography>
-                                    <Typography level="body-sm" fontWeight="md">{app.version}</Typography>
+                                    <Typography level="body-sm" fontWeight="md">{latestLocalFile?.bundleShortVersionString || app.version}</Typography>
                                 </Stack>
                                 <Stack direction="row" justifyContent="space-between">
                                     <Typography level="body-sm">{t('ui.fileSize')}:</Typography>
-                                    <Typography level="body-sm">{formatFileSize(app.fileSizeBytes)}</Typography>
+                                    <Typography level="body-sm">{formatFileSize(latestLocalFile?.size ?? app.fileSizeBytes)}</Typography>
                                 </Stack>
                                 <Stack direction="row" justifyContent="space-between">
                                     <Typography level="body-sm">{t('ui.updateTime')}:</Typography>
-                                    <Typography level="body-sm">{formatDate(app.currentVersionReleaseDate)}</Typography>
+                                    <Typography level="body-sm">{formatDate(latestLocalFile?.releaseDate || app.currentVersionReleaseDate)}</Typography>
                                 </Stack>
                                 <Stack direction="row" justifyContent="space-between">
                                     <Typography level="body-sm">{t('ui.ageRating')}:</Typography>
@@ -1081,19 +1113,25 @@ export default function AppDetail({ app }) {
                         </Stack>
                     ) : versions.length > 0 ? (
                         <List>
-                            {versions.map((version, index) => (
+                            {versions.map((version, index) => {
+                                const localFile = getLocalFileForVersion(version.versionId);
+                                const displayName = localFile?.bundleShortVersionString && localFile.bundleShortVersionString !== '未知'
+                                    ? `版本 ${localFile.bundleShortVersionString}`
+                                    : version.displayName;
+                                const releaseDate = localFile?.releaseDate || version.releaseDate;
+
+                                return (
                                 <>
-                                    <ListItem key={index}>
+                                    <ListItem key={version.versionId ?? index}>
                                         <ListItemDecorator>
                                             {version.isLatest ? <LabelImportantOutline style={{ color: 'green' }} /> : <History />}
                                         </ListItemDecorator>
                                         <ListItemContent>
                                             <Typography level="title-sm" color={version.isLatest ? 'success' : 'neutral'}>
-                                                {version.displayName}
+                                                {displayName}
                                             </Typography>
                                             <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                                                {/* {version.releaseDate ? formatDate(version.releaseDate) : '发布日期未知'} */}
-                                                {version.releaseDate ? formatDate(version.releaseDate) : t('ui.releaseDateUnknown')}
+                                                {releaseDate ? formatDate(releaseDate) : t('ui.releaseDateUnknown')}
                                             </Typography>
                                             <Typography level="body-xs" sx={{ color: 'text.tertiary', fontFamily: 'monospace' }}>
                                                 ID: {version.versionId}
@@ -1103,7 +1141,8 @@ export default function AppDetail({ app }) {
                                     </ListItem>
                                     <Divider />
                                 </>
-                            ))}
+                                );
+                            })}
                         </List>
                     ) : (
                         <Box sx={{ textAlign: 'center', py: 4 }}>

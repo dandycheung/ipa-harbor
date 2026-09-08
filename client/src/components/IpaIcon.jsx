@@ -4,8 +4,7 @@ import {
     Drawer, Button, DialogTitle, DialogContent, ModalClose, Sheet
 } from '@mui/joy';
 import MouseTooltip from './MouseTooltip';
-import { getAppIconUrl, deleteTask, downloadApp, isRateLimitError } from '../utils/api';
-import { downloadIpaWithTemplate } from '../utils/downloadIpa';
+import { getAppIconUrl, deleteTask, downloadApp, isRateLimitError, getAppDownloadPackageUrlByFileName } from '../utils/api';
 import Swal from 'sweetalert2';
 import formatFileSize from '../utils/formatFileSize.js';
 import { Close as CloseIcon, Download as DownloadIcon } from '@mui/icons-material';
@@ -79,7 +78,7 @@ function AppIcon({ appId, size = 128, disabled = false, country }) {
 
 export default function IpaIcon({ item, size = 128, isDragging = false }) {
     const { t } = useTranslation();
-    const { user, settings } = useApp();
+    const { user } = useApp();
     const [drawerOpen, setDrawerOpen] = useState(false);
     const {
         id: appId,
@@ -268,6 +267,33 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
         );
     };
 
+    const downloadUrl = name ? getAppDownloadPackageUrlByFileName(name) : null;
+    const canLinkDownload = ['completed', 'downloaded'].includes(status) && downloadUrl;
+
+    const renderAppIcon = (iconProps) => {
+        const icon = <AppIcon {...iconProps} />;
+
+        if (!canLinkDownload) {
+            return icon;
+        }
+
+        return (
+            <Link
+                component="a"
+                href={downloadUrl}
+                onClick={(e) => e.preventDefault()} // 阻止默认a事件，同时右键仍可 href 另存为下载
+                sx={{
+                    display: 'block',
+                    lineHeight: 0,
+                    textDecoration: 'none',
+                    color: 'inherit',
+                }}
+            >
+                {icon}
+            </Link>
+        );
+    };
+
     const renderContent = () => {
         switch (status) {
             case 'pending':
@@ -276,7 +302,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                     <>
                         {/* 图标 + 进度条 */}
                         <Box sx={{ position: 'relative' }}>
-                            <AppIcon appId={finalAppId} size={size} disabled country={user?.region} />
+                            {renderAppIcon({ appId: finalAppId, size, disabled: true, country: user?.region })}
                             <Box
                                 sx={{
                                     position: 'absolute',
@@ -346,7 +372,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                             }}
                             onClick={handleDeleteTask}
                         >
-                            <AppIcon appId={finalAppId} size={size} disabled country={user?.region} />
+                            {renderAppIcon({ appId: finalAppId, size, disabled: true, country: user?.region })}
                             <Box
                                 sx={{
                                     position: 'absolute',
@@ -396,7 +422,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
             case 'downloaded':
                 return (
                     <>
-                        <AppIcon appId={finalAppId} size={size} country={user?.region} />
+                        {renderAppIcon({ appId: finalAppId, size, country: user?.region })}
                         {wrapLabelTooltip(
                             <Stack spacing="0.1rem" alignItems="center" sx={{ width: size }}>
                                 <Typography
@@ -422,7 +448,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
             default:
                 return (
                     <>
-                        <AppIcon appId={finalAppId} size={size} country={user?.region} />
+                        {renderAppIcon({ appId: finalAppId, size, country: user?.region })}
                         {wrapLabelTooltip(
                             <Stack spacing="0.1rem" alignItems="center" sx={{ width: size }}>
                                 <Typography
@@ -451,34 +477,6 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
     const handleClick = () => {
         if (['completed', 'downloaded'].includes(status)) {
             setDrawerOpen(true);
-        }
-    };
-
-    const handleDownload = async (e) => {
-        e.stopPropagation();
-
-        try {
-            await downloadIpaWithTemplate({
-                storageFileName: name,
-                template: settings.downloadFileNameTemplate,
-                metadata: {
-                    itemId: displayAppId,
-                    softwareVersionExternalIdentifier,
-                    softwareVersionBundleId,
-                    bundleVersion,
-                    bundleShortVersionString,
-                    bundleDisplayName,
-                    releaseDateTime: releaseDate,
-                },
-            });
-        } catch (error) {
-            console.error('下载 IPA 失败:', error);
-            Swal.fire({
-                icon: 'error',
-                title: t('ui.downloadFailed'),
-                text: error.message,
-                confirmButtonText: t('ui.confirm'),
-            });
         }
     };
 
@@ -632,12 +630,11 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                     >
                         {t('ui.delete')}
                     </Button>
-                    <Button
-                        startDecorator={<DownloadIcon />}
-                        onClick={handleDownload}
-                    >
-                        {t('ui.download')}
-                    </Button>
+                    <Link href={getAppDownloadPackageUrlByFileName(name)}>
+                        <Button startDecorator={<DownloadIcon />}>
+                            {t('ui.download')}
+                        </Button>
+                    </Link>
                 </Stack>
             </Sheet>
         </Drawer>
