@@ -416,7 +416,7 @@ export default function AppDetail({ app }) {
     };
 
     // 删除任务
-    const handleDeleteTask = async (taskId) => {
+    const handleDeleteTask = async (taskId, fileName) => {
         const result = await Swal.fire({
             title: t('ui.confirmDelete'), // 确认删除
             text: t('ui.confirmDeleteTask'), // 确定要删除这个任务和对应的 ipa 文件吗？
@@ -429,7 +429,9 @@ export default function AppDetail({ app }) {
 
         if (result.isConfirmed) {
             try {
-                const response = await deleteTask(taskId);
+                const response = taskId
+                    ? await deleteTask(taskId)
+                    : await deleteTask(null, fileName);
                 if (response.success) {
                     Swal.fire({
                         icon: 'success',
@@ -453,14 +455,28 @@ export default function AppDetail({ app }) {
 
     // 获取当前应用的latest版本
     const getLatestTaskInfo = () => {
-        if (!app?.trackId || !taskList?.summary) return null;
-        return taskList.summary[app.trackId]?.['latest'] || null;
+        if (!app?.trackId) return null;
+        const appId = String(app.trackId);
+        const fromTask = taskList?.summary?.[appId]?.latest;
+        if (fromTask) return fromTask;
+
+        const file = fileList.files?.find((item) => (
+            String(item.itemId) === appId || item.name.startsWith(`${appId}_`)
+        ));
+        return file ? { status: 'completed', taskId: null, percentage: 100, fileName: file.name } : null;
     };
 
-    // 获取指定版本的任务
     const getVersionTaskInfo = (versionId) => {
-        if (!app?.trackId || !taskList?.summary) return null;
-        return taskList.summary[app.trackId]?.[versionId] || null;
+        if (!app?.trackId) return null;
+        const appId = String(app.trackId);
+        const fromTask = taskList?.summary?.[appId]?.[versionId];
+        if (fromTask) return fromTask;
+
+        const file = fileList.files?.find((item) => (
+            item.name === `${appId}_${versionId}.ipa`
+            || (String(item.itemId) === appId && String(item.softwareVersionExternalIdentifier) === String(versionId))
+        ));
+        return file ? { status: 'completed', taskId: null, percentage: 100, fileName: file.name } : null;
     };
 
     const renderDownloadSection = () => {
@@ -494,7 +510,7 @@ export default function AppDetail({ app }) {
                                 size="sm"
                                 variant="outlined"
                                 color="danger"
-                                onClick={() => handleDeleteTask(taskInfo.taskId)}
+                                onClick={() => handleDeleteTask(taskInfo.taskId, taskInfo.fileName)}
                             >
                                 <Delete />
                             </IconButton>
@@ -515,7 +531,7 @@ export default function AppDetail({ app }) {
                                 variant="outlined"
                                 color="danger"
                                 disabled={true}
-                                onClick={() => handleDeleteTask(taskInfo.taskId)}
+                                onClick={() => handleDeleteTask(taskInfo.taskId, taskInfo.fileName)}
                             >
                                 <Delete />
                             </IconButton>
@@ -600,7 +616,7 @@ export default function AppDetail({ app }) {
                                 size="sm"
                                 variant="outlined"
                                 color="danger"
-                                onClick={() => handleDeleteTask(taskInfo.taskId)}
+                                onClick={() => handleDeleteTask(taskInfo.taskId, taskInfo.fileName)}
                             >
                                 <Delete />
                             </IconButton>
@@ -620,7 +636,7 @@ export default function AppDetail({ app }) {
                                 size="sm"
                                 variant="outlined"
                                 color="danger"
-                                onClick={() => handleDeleteTask(taskInfo.taskId)}
+                                onClick={() => handleDeleteTask(taskInfo.taskId, taskInfo.fileName)}
                             >
                                 <Delete />
                             </IconButton>
@@ -713,7 +729,7 @@ export default function AppDetail({ app }) {
                                     fontSize: 'xs',
                                     fontWeight: 'md'
                                 }}
-                                onClick={() => handleDeleteTask(taskInfo.taskId)}
+                                onClick={() => handleDeleteTask(taskInfo.taskId, taskInfo.fileName)}
                             >
                                 {taskInfo.percentage}%
                             </Button>
@@ -752,7 +768,7 @@ export default function AppDetail({ app }) {
                                     minHeight: 'auto',
                                     fontSize: 'xs'
                                 }}
-                                onClick={() => handleDeleteTask(taskInfo.taskId)}
+                                onClick={() => handleDeleteTask(taskInfo.taskId, taskInfo.fileName)}
                             >
                                 {t('ui.waiting')}
                             </Button>
@@ -767,7 +783,7 @@ export default function AppDetail({ app }) {
                                 size="sm"
                                 variant="plain"
                                 color="danger"
-                                onClick={() => handleDeleteTask(taskInfo.taskId)}
+                                onClick={() => handleDeleteTask(taskInfo.taskId, taskInfo.fileName)}
                             >
                                 <Delete />
                             </IconButton>
@@ -837,7 +853,7 @@ export default function AppDetail({ app }) {
                                     width: 20,
                                     height: 20
                                 }}
-                                onClick={() => handleDeleteTask(taskInfo.taskId)}
+                                onClick={() => handleDeleteTask(taskInfo.taskId, taskInfo.fileName)}
                             >
                                 <Delete sx={{ fontSize: 12 }} />
                             </IconButton>
