@@ -6,7 +6,7 @@ const { templateHasVariable } = require('../../utils/filenameTemplate');
  */
 async function updateSettingsHandler(req, res) {
     try {
-        const { downloadFileNameTemplate } = req.body || {};
+        const { downloadFileNameTemplate, showVersionMetadataRefresh } = req.body || {};
 
         if (downloadFileNameTemplate !== undefined && !templateHasVariable(downloadFileNameTemplate)) {
             return res.status(400).json({
@@ -15,8 +15,16 @@ async function updateSettingsHandler(req, res) {
             });
         }
 
+        if (showVersionMetadataRefresh !== undefined && typeof showVersionMetadataRefresh !== 'boolean') {
+            return res.status(400).json({
+                success: false,
+                message: 'showVersionMetadataRefresh 必须是布尔值',
+            });
+        }
+
         const nextSettings = mergeSettings({
             ...(downloadFileNameTemplate !== undefined ? { downloadFileNameTemplate } : {}),
+            ...(showVersionMetadataRefresh !== undefined ? { showVersionMetadataRefresh } : {}),
         });
 
         const saved = await writeAppSettings(req.user.id, nextSettings);

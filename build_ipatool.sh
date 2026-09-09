@@ -12,9 +12,38 @@ GO_BUILD_CACHE="${CACHE_DIR}/go-build"
 BUILD_DARWIN=0
 BUILD_LINUX=0
 BUILD_ARCHES=()
-IPATOOL_REPO="${IPATOOL_REPO:-https://github.com/majd/ipatool.git}"
-IPATOOL_REF="${IPATOOL_REF:-main}"
+IPATOOL_SOURCE="official"
+IPATOOL_REPO=""
+IPATOOL_REF=""
+REPO_EXPLICIT=0
+REF_EXPLICIT=0
 GO_IMAGE="${GO_IMAGE:-golang:1.25-bookworm}"
+
+resolve_ipatool_source() {
+  case "$IPATOOL_SOURCE" in
+    official|majd|default)
+      IPATOOL_REPO="${IPATOOL_REPO:-https://github.com/majd/ipatool.git}"
+      IPATOOL_REF="${IPATOOL_REF:-main}"
+      ;;
+    haughtyeyes|fork|empty-volume-store)
+      IPATOOL_REPO="${IPATOOL_REPO:-https://github.com/HaughtyEyes/ipatool.git}"
+      IPATOOL_REF="${IPATOOL_REF:-fix-empty-volume-store-response}"
+      ;;
+    *)
+      echo "Unknown source: $IPATOOL_SOURCE (expected official | haughtyeyes)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+show_ipatool_source() {
+  resolve_ipatool_source
+  local label="$IPATOOL_SOURCE"
+  if [[ "$REPO_EXPLICIT" -eq 1 || "$REF_EXPLICIT" -eq 1 ]]; then
+    label="custom"
+  fi
+  echo "Current source (${label}): ${IPATOOL_REPO} @ ${IPATOOL_REF}"
+}
 
 usage() {
   cat <<EOF
@@ -26,15 +55,21 @@ Options:
   --choice N    Non-interactive choice: 1 | 2 | 3 | 4 | 0 (0 = exit)
   --arch ARCH   Linux only: amd64 | arm64 | all (skips menu when combined with --darwin)
   --darwin      Also build a local macOS binary at server/bin/ipatool
+  --source NAME Source preset: official | haughtyeyes (default: official)
+  --repo URL    Override source repository URL
+  --ref REF     Override branch, tag, or commit
   -h, --help    Show this help
 
 Environment:
-  IPATOOL_REPO   Source repository (default: majd/ipatool)
-  IPATOOL_REF    Branch or tag (default: main)
   GO_IMAGE       Docker image for builds (default: golang:1.25-bookworm)
+
+Source presets:
+  official       majd/ipatool @ main
+  haughtyeyes    HaughtyEyes/ipatool @ fix-empty-volume-store-response
 
 Notes:
   The first build is slow (pull image + Go modules). Later builds reuse server/.cache.
+  Switching --source or --repo clears cached source and re-clones.
   On Apple Silicon, linux/amd64 uses QEMU and is much slower than arm64.
 EOF
 }
@@ -88,18 +123,18 @@ EOF
   apply_choice "$ans"
 }
 
-CLI_ARGS=0
+BUILD_CLI_ARGS=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --choice)
       [[ $# -ge 2 ]] || { echo "Missing value for --choice" >&2; exit 1; }
-      CLI_ARGS=1
+      BUILD_CLI_ARGS=1
       apply_choice "$2"
       shift 2
       ;;
     --arch)
       [[ $# -ge 2 ]] || { echo "Missing value for --arch" >&2; exit 1; }
-      CLI_ARGS=1
+      BUILD_CLI_ARGS=1
       BUILD_LINUX=1
       case "$2" in
         amd64|arm64) BUILD_ARCHES=("$2") ;;
@@ -112,9 +147,26 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --darwin)
-      CLI_ARGS=1
+      BUILD_CLI_ARGS=1
       BUILD_DARWIN=1
       shift
+      ;;
+    --source)
+      [[ $# -ge 2 ]] || { echo "Missing value for --source" >&2; exit 1; }
+      IPATOOL_SOURCE="$2"
+      shift 2
+      ;;
+    --repo)
+      [[ $# -ge 2 ]] || { echo "Missing value for --repo" >&2; exit 1; }
+      IPATOOL_REPO="$2"
+      REPO_EXPLICIT=1
+      shift 2
+      ;;
+    --ref)
+      [[ $# -ge 2 ]] || { echo "Missing value for --ref" >&2; exit 1; }
+      IPATOOL_REF="$2"
+      REF_EXPLICIT=1
+      shift 2
       ;;
     -h|--help)
       usage
@@ -128,7 +180,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$CLI_ARGS" -eq 0 ]]; then
+show_ipatool_source
+
+if [[ "$BUILD_CLI_ARGS" -eq 0 ]]; then
   if [[ -t 0 ]]; then
     prompt_choice
   else
@@ -152,8 +206,18 @@ fi
 mkdir -p "$BIN_DIR" "$GO_MOD_CACHE" "$GO_BUILD_CACHE"
 
 sync_source() {
+  local cached_remote=""
   if [[ -d "${SRC_DIR}/.git" ]]; then
-    echo "Updating cached source (${IPATOOL_REF}) …"
+    cached_remote="$(git -C "$SRC_DIR" remote get-url origin 2>/dev/null || true)"
+    if [[ -n "$cached_remote" && "$cached_remote" != "$IPATOOL_REPO" ]]; then
+      echo "Source repository changed (${cached_remote} -> ${IPATOOL_REPO}), re-cloning …"
+      rm -rf "$SRC_DIR"
+    fi
+  fi
+
+  if [[ -d "${SRC_DIR}/.git" ]]; then
+    echo "Updating cached source (${IPATOOL_REPO} @ ${IPATOOL_REF}) …"
+    git -C "$SRC_DIR" remote set-url origin "$IPATOOL_REPO"
     git -C "$SRC_DIR" fetch --depth 1 origin "$IPATOOL_REF"
     git -C "$SRC_DIR" checkout -f FETCH_HEAD
   else
@@ -161,6 +225,8 @@ sync_source() {
     rm -rf "$SRC_DIR"
     git clone --depth 1 --branch "$IPATOOL_REF" "$IPATOOL_REPO" "$SRC_DIR" 2>/dev/null \
       || git clone --depth 1 "$IPATOOL_REPO" "$SRC_DIR"
+    git -C "$SRC_DIR" fetch --depth 1 origin "$IPATOOL_REF"
+    git -C "$SRC_DIR" checkout -f FETCH_HEAD
   fi
 
   git -C "$SRC_DIR" fetch --depth 1 origin 'refs/tags/v*' 2>/dev/null || true

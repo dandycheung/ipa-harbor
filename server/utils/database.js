@@ -73,6 +73,7 @@ class Database {
                         }
 
                         this.ensureSettingsColumn()
+                            .then(() => this.ensureAppVersionMetadataTable())
                             .then(() => {
                                 this.ensureUpdateTrigger(tableExists, resolve, reject);
                             })
@@ -147,6 +148,154 @@ class Database {
                                 }
                             });
                         });
+    }
+
+    async ensureAppVersionMetadataTable() {
+        return new Promise((resolve, reject) => {
+            const createTableSQL = `
+                CREATE TABLE IF NOT EXISTS app_version_metadata (
+                    app_id TEXT NOT NULL,
+                    version_id TEXT NOT NULL,
+                    bundle_id TEXT,
+                    display_version TEXT,
+                    release_date TEXT,
+                    apple_metadata TEXT,
+                    ipa_metadata TEXT,
+                    fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (app_id, version_id)
+                )
+            `;
+
+            this.db.run(createTableSQL, (err) => {
+                if (err) {
+                    console.error('创建 app_version_metadata 表失败:', err.message);
+                    reject(err);
+                    return;
+                }
+
+                this.db.run(
+                    'CREATE INDEX IF NOT EXISTS idx_app_version_metadata_app ON app_version_metadata(app_id)',
+                    (indexErr) => {
+                        if (indexErr) {
+                            console.error('创建 app_version_metadata 索引失败:', indexErr.message);
+                            reject(indexErr);
+                        } else {
+                            resolve();
+                        }
+                    }
+                );
+            });
+        });
+    }
+
+    mapAppVersionMetadataRow(row) {
+        if (!row) {
+            return null;
+        }
+
+        return {
+            app_id: row.app_id,
+            version_id: row.version_id,
+            bundle_id: row.bundle_id,
+            display_version: row.display_version,
+            release_date: row.release_date,
+            apple_metadata: row.apple_metadata ? JSON.parse(row.apple_metadata) : null,
+            ipa_metadata: row.ipa_metadata ? JSON.parse(row.ipa_metadata) : null,
+            fetched_at: row.fetched_at,
+            updated_at: row.updated_at,
+        };
+    }
+
+    async upsertAppVersionMetadata({
+        appId,
+        versionId,
+        bundleId = null,
+        displayVersion = null,
+        releaseDate = null,
+        appleMetadata = null,
+        ipaMetadata = null,
+    }) {
+        return new Promise((resolve, reject) => {
+            const sql = `
+                INSERT INTO app_version_metadata (
+                    app_id, version_id, bundle_id, display_version, release_date,
+                    apple_metadata, ipa_metadata, fetched_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT(app_id, version_id) DO UPDATE SET
+                    bundle_id = COALESCE(excluded.bundle_id, app_version_metadata.bundle_id),
+                    display_version = COALESCE(excluded.display_version, app_version_metadata.display_version),
+                    release_date = COALESCE(excluded.release_date, app_version_metadata.release_date),
+                    apple_metadata = COALESCE(excluded.apple_metadata, app_version_metadata.apple_metadata),
+                    ipa_metadata = COALESCE(excluded.ipa_metadata, app_version_metadata.ipa_metadata),
+                    updated_at = CURRENT_TIMESTAMP
+            `;
+
+            this.db.run(
+                sql,
+                [
+                    String(appId),
+                    String(versionId),
+                    bundleId,
+                    displayVersion,
+                    releaseDate,
+                    appleMetadata ? JSON.stringify(appleMetadata) : null,
+                    ipaMetadata ? JSON.stringify(ipaMetadata) : null,
+                ],
+                function onUpsert(err) {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve({ appId: String(appId), versionId: String(versionId) });
+                    }
+                }
+            );
+        });
+    }
+
+    async getAppVersionMetadata(appId, versionId) {
+        return new Promise((resolve, reject) => {
+            const sql = 'SELECT * FROM app_version_metadata WHERE app_id = ? AND version_id = ? LIMIT 1';
+            this.db.get(sql, [String(appId), String(versionId)], (err, row) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(this.mapAppVersionMetadataRow(row));
+                }
+            });
+        });
+    }
+
+    async getAppVersionMetadataByAppId(appId) {
+        return new Promise((resolve, reject) => {
+            const sql = 'SELECT * FROM app_version_metadata WHERE app_id = ? ORDER BY CAST(version_id AS INTEGER) DESC';
+            this.db.all(sql, [String(appId)], (err, rows) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve((rows || []).map((row) => this.mapAppVersionMetadataRow(row)));
+                }
+            });
+        });
+    }
+
+    async getAppVersionMetadataByAppIds(appIds = []) {
+        const uniqueAppIds = [...new Set(appIds.map((id) => String(id)).filter(Boolean))];
+        if (uniqueAppIds.length === 0) {
+            return [];
+        }
+
+        return new Promise((resolve, reject) => {
+            const placeholders = uniqueAppIds.map(() => '?').join(', ');
+            const sql = `SELECT * FROM app_version_metadata WHERE app_id IN (${placeholders})`;
+            this.db.all(sql, uniqueAppIds, (err, rows) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve((rows || []).map((row) => this.mapAppVersionMetadataRow(row)));
+                }
+            });
+        });
     }
 
     /**

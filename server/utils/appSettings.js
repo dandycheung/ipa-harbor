@@ -6,6 +6,7 @@ const {
 
 const DEFAULT_SETTINGS = {
     downloadFileNameTemplate: DEFAULT_DOWNLOAD_FILENAME_TEMPLATE,
+    showVersionMetadataRefresh: false,
 };
 
 function mergeSettings(raw = {}) {
@@ -13,6 +14,9 @@ function mergeSettings(raw = {}) {
         downloadFileNameTemplate: normalizeTemplate(
             raw.downloadFileNameTemplate || DEFAULT_SETTINGS.downloadFileNameTemplate
         ),
+        showVersionMetadataRefresh: typeof raw.showVersionMetadataRefresh === 'boolean'
+            ? raw.showVersionMetadataRefresh
+            : DEFAULT_SETTINGS.showVersionMetadataRefresh,
     };
 }
 

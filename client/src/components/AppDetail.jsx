@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import {
     Box,
     Stack,
@@ -22,14 +22,34 @@ import {
     Tooltip
 } from '@mui/joy';
 import { Star, Download, Category, Person, History, AccountBalanceWallet, Delete, Refresh, InstallMobile, LabelImportantOutline } from '@mui/icons-material';
+import FindReplaceIcon from '@mui/icons-material/FindReplace';
 import { tabClasses } from '@mui/joy/Tab';
-import { getAppVersions, purchaseApp, downloadApp, deleteTask, getAppInstallPackageUrl, getAppDownloadPackageUrlByFileName, isRateLimitError } from '../utils/api';
+import { getAppVersions, refreshAppVersionMetadata, purchaseApp, downloadApp, deleteTask, getAppInstallPackageUrl, getAppDownloadPackageUrlByFileName, isRateLimitError } from '../utils/api';
 import { useApp } from '../contexts/AppContext';
 import Swal from 'sweetalert2';
 import isValidDomain from 'is-valid-domain';
 import { getAppIconUrl } from '../utils/api';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { Virtuoso } from 'react-virtuoso';
+
+const VersionVirtuosoList = React.forwardRef(function VersionVirtuosoList({ style, children, ...props }, ref) {
+    return (
+        <List ref={ref} component="div" style={style} {...props}>
+            {children}
+        </List>
+    );
+});
+
+const versionVirtuosoComponents = { List: VersionVirtuosoList };
+
+// 历史版本行高约 80–120px，适当加大视口外渲染范围，避免快速滚动透白
+const versionListVirtuosoConfig = {
+    increaseViewportBy: { top: 800, bottom: 800 },
+    minOverscanItemCount: { top: 12, bottom: 12 },
+    defaultItemHeight: 96,
+    skipAnimationFrameInResizeObserver: true,
+};
 
 export default function AppDetail({ app }) {
     const { t } = useTranslation();
@@ -38,11 +58,20 @@ export default function AppDetail({ app }) {
     const [versionsLoading, setVersionsLoading] = useState(false);
     const [versionsError, setVersionsError] = useState(null);
     const [downloadingVersions, setDownloadingVersions] = useState(new Set());
+    const [refreshingVersionMetadata, setRefreshingVersionMetadata] = useState(new Set());
     const [dataSource, setDataSource] = useState(null); // 数据源标记
     const [activeTab, setActiveTab] = useState(0); // 管理tabs状态
     const [storeLatestVersionId, setStoreLatestVersionId] = useState(null);
+    const rootRef = useRef(null);
+    const [scrollParent, setScrollParent] = useState(null);
 
-    const { taskList, user, fileList } = useApp();
+    const { taskList, user, fileList, settings } = useApp();
+    const showVersionMetadataRefresh = settings.showVersionMetadataRefresh === true;
+
+    useLayoutEffect(() => {
+        const parent = rootRef.current?.closest('.dialog-body');
+        setScrollParent(parent ?? null);
+    }, [app?.trackId]);
 
     const extractLatestVersionId = (versionObjects = []) => {
         const latest = versionObjects.find((item) => item.bundleVersion === app.version) || versionObjects[0];
@@ -303,6 +332,52 @@ export default function AppDetail({ app }) {
         if (result.isConfirmed) {
             // window.location.href = '/login'; // 或者使用路由导航
             navigate('/login');
+        }
+    };
+
+    // 手动拉取单个版本的 Apple 元数据
+    const handleRefreshVersionMetadata = async (versionId) => {
+        if (!app.trackId || !versionId) return;
+
+        setRefreshingVersionMetadata((prev) => new Set([...prev, versionId]));
+
+        try {
+            const response = await refreshAppVersionMetadata(app.trackId, versionId);
+            if (response.success && response.data) {
+                setVersions((prev) => prev.map((v) => {
+                    if (String(v.versionId) !== String(versionId)) return v;
+                    const bundleVersion = response.data.bundleVersion || v.bundleVersion;
+                    return {
+                        ...v,
+                        releaseDate: response.data.releaseDate || v.releaseDate,
+                        bundleVersion,
+                        displayName: bundleVersion && bundleVersion !== '未知'
+                            ? `版本 ${bundleVersion}`
+                            : v.displayName,
+                    };
+                }));
+            }
+        } catch (error) {
+            if (isRateLimitError(error)) return;
+            console.error('获取版本元数据失败:', error);
+
+            if (error.errorType === 'TOKEN_EXPIRED') {
+                handleTokenExpiredError();
+                return;
+            }
+
+            Swal.fire({
+                icon: 'error',
+                title: t('ui.refreshVersionMetadataFailed'),
+                text: error.message,
+                confirmButtonText: t('ui.ok'),
+            });
+        } finally {
+            setRefreshingVersionMetadata((prev) => {
+                const next = new Set(prev);
+                next.delete(versionId);
+                return next;
+            });
         }
     };
 
@@ -918,8 +993,105 @@ export default function AppDetail({ app }) {
         );
     };
 
+    const renderHistoricalVersionItem = (version, index) => {
+        const localFile = getLocalFileForVersion(version.versionId);
+        const displayName = localFile?.bundleShortVersionString && localFile.bundleShortVersionString !== '未知'
+            ? `版本 ${localFile.bundleShortVersionString}`
+            : version.displayName;
+        const releaseDate = version.releaseDate;
+        const versionActions = renderVersionDownloadButton(version);
+
+        const isFirst = index === 0;
+        const isLast = index === versions.length - 1;
+
+        return (
+            <ListItem
+                sx={{
+                    flexWrap: 'wrap',
+                    alignItems: 'flex-start',
+                    rowGap: 1,
+                    pt: isFirst
+                        ? 'var(--ListItem-paddingY)'
+                        : 'calc(var(--ListItem-paddingY) + var(--ListDivider-gap, 0.375rem))',
+                    pb: isLast
+                        ? 'var(--ListItem-paddingY)'
+                        : 'calc(var(--ListItem-paddingY) + var(--ListDivider-gap, 0.375rem))',
+                    ...(index > 0 && {
+                        borderTop: '1px solid',
+                        borderColor: 'divider',
+                    }),
+                }}
+            >
+                <ListItemDecorator>
+                        {version.isLatest ? <LabelImportantOutline style={{ color: 'green' }} /> : <History />}
+                    </ListItemDecorator>
+                    <ListItemContent sx={{ flex: 1, minWidth: 0 }}>
+                        <Stack
+                            direction="row"
+                            alignItems="flex-end"
+                            gap={0.5}
+                            sx={{
+                                alignSelf: 'flex-start',
+                                '& .version-metadata-refresh': {
+                                    opacity: 0,
+                                    transition: 'opacity 0.15s ease-in-out',
+                                    '@media (hover: none), (pointer: coarse)': {
+                                        opacity: 1,
+                                    },
+                                },
+                                '&:hover .version-metadata-refresh, & .version-metadata-refresh:focus-visible': {
+                                    opacity: 1,
+                                },
+                                '& .version-metadata-refresh[data-loading="true"]': {
+                                    opacity: 1,
+                                },
+                            }}
+                        >
+                            <Stack gap={0.25}>
+                                <Typography level="title-sm" color={version.isLatest ? 'success' : 'neutral'}>
+                                    {displayName}
+                                </Typography>
+                                <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
+                                    {releaseDate ? formatDate(releaseDate) : t('ui.releaseDateUnknown')}
+                                </Typography>
+                            </Stack>
+                            {showVersionMetadataRefresh && !releaseDate && (
+                                <Tooltip title={t('ui.refreshVersionMetadata')} variant="outlined" placement="right">
+                                    <IconButton
+                                        className="version-metadata-refresh"
+                                        variant="plain"
+                                        color="neutral"
+                                        size="sm"
+                                        data-loading={refreshingVersionMetadata.has(version.versionId) || undefined}
+                                        loading={refreshingVersionMetadata.has(version.versionId)}
+                                        onClick={() => handleRefreshVersionMetadata(version.versionId)}
+                                        aria-label={t('ui.refreshVersionMetadata')}
+                                    >
+                                        <FindReplaceIcon />
+                                    </IconButton>
+                                </Tooltip>
+                            )}
+                        </Stack>
+                        <Typography level="body-xs" sx={{ color: 'text.tertiary', fontFamily: 'monospace', mt: 0.25 }}>
+                            {t('ui.versionId')}: {version.versionId}
+                        </Typography>
+                    </ListItemContent>
+                    <Box
+                        sx={{
+                            flexBasis: { xs: '100%', sm: 'auto' },
+                            display: 'flex',
+                            justifyContent: 'flex-end',
+                            pl: { xs: 2, sm: 0 },
+                        }}
+                    >
+                        {versionActions}
+                    </Box>
+            </ListItem>
+        );
+    };
+
     return (
-        <Box>
+        <Box ref={rootRef}>
 
             {/* 应用基本信息 */}
             <Stack direction="row" gap={3} sx={{ mb: 3 }}>
@@ -1014,7 +1186,7 @@ export default function AppDetail({ app }) {
                                 </Stack>
                                 <Stack direction="row" justifyContent="space-between">
                                     <Typography level="body-sm">{t('ui.updateTime')}:</Typography>
-                                    <Typography level="body-sm">{formatDate(latestLocalFile?.releaseDate || app.currentVersionReleaseDate)}</Typography>
+                                    <Typography level="body-sm">{formatDate(app.currentVersionReleaseDate)}</Typography>
                                 </Stack>
                                 <Stack direction="row" justifyContent="space-between">
                                     <Typography level="body-sm">{t('ui.ageRating')}:</Typography>
@@ -1079,10 +1251,9 @@ export default function AppDetail({ app }) {
                                 color: 'warning.600',
                                 mb: 1,
                                 textAlign: 'center',
-                                fontStyle: 'italic'
+                                fontStyle: 'italic',
                             }}
                         >
-                            {/* ⚠️注意: 当前显示的是第三方 API 数据，可能与实际版本有差异, 请在下载前确保已经获取过该应用 */}
                             {t('ui.thirdPartyApiWarning')}
                         </Typography>
                     )}
@@ -1106,48 +1277,33 @@ export default function AppDetail({ app }) {
                             <Typography level="body-lg" sx={{ color: 'text.secondary' }}>
                                 {versionsError}
                             </Typography>
-                            {/* <Button size="sm" color="danger" variant="soft" onClick={() => handleVersionsError()}>解决方法</Button>
-                            <Button size="sm" color="primary" variant="soft" onClick={() => fetchVersions()}>重新获取版本列表</Button> */}
                             <Button size="sm" color="danger" variant="soft" onClick={() => handleVersionsError()}>{t('ui.solution')}</Button>
                             <Button size="sm" color="primary" variant="soft" onClick={() => fetchVersions()}>{t('ui.refetchVersionList')}</Button>
                         </Stack>
                     ) : versions.length > 0 ? (
-                        <List>
-                            {versions.map((version, index) => {
-                                const localFile = getLocalFileForVersion(version.versionId);
-                                const displayName = localFile?.bundleShortVersionString && localFile.bundleShortVersionString !== '未知'
-                                    ? `版本 ${localFile.bundleShortVersionString}`
-                                    : version.displayName;
-                                const releaseDate = localFile?.releaseDate || version.releaseDate;
-
-                                return (
-                                <>
-                                    <ListItem key={version.versionId ?? index}>
-                                        <ListItemDecorator>
-                                            {version.isLatest ? <LabelImportantOutline style={{ color: 'green' }} /> : <History />}
-                                        </ListItemDecorator>
-                                        <ListItemContent>
-                                            <Typography level="title-sm" color={version.isLatest ? 'success' : 'neutral'}>
-                                                {displayName}
-                                            </Typography>
-                                            <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                                                {releaseDate ? formatDate(releaseDate) : t('ui.releaseDateUnknown')}
-                                            </Typography>
-                                            <Typography level="body-xs" sx={{ color: 'text.tertiary', fontFamily: 'monospace' }}>
-                                                ID: {version.versionId}
-                                            </Typography>
-                                        </ListItemContent>
-                                        {renderVersionDownloadButton(version)}
-                                    </ListItem>
-                                    <Divider />
-                                </>
-                                );
-                            })}
-                        </List>
+                        scrollParent ? (
+                            <Virtuoso
+                                customScrollParent={scrollParent}
+                                components={versionVirtuosoComponents}
+                                data={versions}
+                                increaseViewportBy={versionListVirtuosoConfig.increaseViewportBy}
+                                minOverscanItemCount={versionListVirtuosoConfig.minOverscanItemCount}
+                                defaultItemHeight={versionListVirtuosoConfig.defaultItemHeight}
+                                skipAnimationFrameInResizeObserver={versionListVirtuosoConfig.skipAnimationFrameInResizeObserver}
+                                itemContent={(index, version) => renderHistoricalVersionItem(version, index)}
+                            />
+                        ) : (
+                            <List>
+                                {versions.map((version, index) => (
+                                    <React.Fragment key={version.versionId ?? index}>
+                                        {renderHistoricalVersionItem(version, index)}
+                                    </React.Fragment>
+                                ))}
+                            </List>
+                        )
                     ) : (
                         <Box sx={{ textAlign: 'center', py: 4 }}>
                             <Typography level="body-lg" sx={{ color: 'text.secondary' }}>
-                                {/* 暂无历史版本 */}
                                 {t('ui.noHistoricalVersions')}
                             </Typography>
                         </Box>

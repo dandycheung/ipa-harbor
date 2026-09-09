@@ -172,13 +172,23 @@ client/
 └── vite.config.js
 ```
 ### Development
-First download the latest ipatool assets according to your development computer's CPU architecture
-`https://github.com/majd/ipatool/releases`
 
-Extract, then rename the binary file to `ipatool`, directory structure:
-```text
-server/bin/ipatool
+Download the matching binary from [ipatool releases](https://github.com/majd/ipatool/releases), extract to `server/bin/ipatool`; or build from source:
+
+```bash
+chmod +x build_ipatool.sh
+
+# Official source (default)
+./build_ipatool.sh --darwin
+
+# HaughtyEyes fork (fixes empty Items / Spotify etc.)
+./build_ipatool.sh --source haughtyeyes --darwin
+
+# Fully custom
+./build_ipatool.sh --repo https://github.com/HaughtyEyes/ipatool.git --ref fix-empty-volume-store-response --darwin
 ```
+
+Chinese script: `build_ipatool_zh.sh` (same options).
 
 #### Backend
 ```bash
@@ -411,13 +421,23 @@ client/
 └── vite.config.js
 ```
 ### 开发
-先下载 ipatool 最新的资产, 按照开发时电脑的 CPU 架构进行下载
-`https://github.com/majd/ipatool/releases`
 
-解压，然后将二进制文件重命名为 `ipatool`, 目录结构为
-```text
-server/bin/ipatool
+从 [ipatool releases](https://github.com/majd/ipatool/releases) 下载对应架构二进制，解压并重命名为 `server/bin/ipatool`；或从源码编译：
+
+```bash
+chmod +x build_ipatool_zh.sh
+
+# 官方源（默认）
+./build_ipatool_zh.sh --darwin
+
+# HaughtyEyes fork（修复空 Items / Spotify 等）
+./build_ipatool_zh.sh --source haughtyeyes --darwin
+
+# 完全自定义
+./build_ipatool_zh.sh --repo https://github.com/HaughtyEyes/ipatool.git --ref fix-empty-volume-store-response --darwin
 ```
+
+英文脚本见 `build_ipatool.sh`，参数相同。
 
 #### 后端
 ```bash

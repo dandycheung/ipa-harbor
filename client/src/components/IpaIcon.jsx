@@ -97,6 +97,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
         softwareVersionBundleId,
         softwareVersionExternalIdentifier,
         releaseDate,
+        firstReleaseDate,
         size: fileSize,
         createdAt,
     } = item;
@@ -141,7 +142,8 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
             { label: t('ui.versionId'), value: softwareVersionExternalIdentifier }, // 版本 ID
             { label: t('ui.productType'), value: productType }, // 产品类型
             { label: t('ui.fileSize'), value: fileSize ? formatFileSize(fileSize) : null }, // 文件大小
-            { label: t('ui.releaseDate'), value: releaseDate ? formatDate(releaseDate) : null }, // 发布日期
+            { label: t('ui.releaseDate'), value: releaseDate ? formatDate(releaseDate) : null },
+            { label: t('ui.firstReleaseDate'), value: firstReleaseDate ? formatDate(firstReleaseDate) : null },
             { label: t('ui.downloadTime'), value: createdAt ? formatDate(createdAt) : null }, // 下载时间
             { label: t('ui.fileName'), value: name }, // 文件名称
         ];
@@ -600,6 +602,12 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                                 <Box>
                                     <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.releaseDate')}</Typography>
                                     <Typography level="body-md">{formatDate(releaseDate)}</Typography>
+                                </Box>
+                            )}
+                            {firstReleaseDate && (
+                                <Box>
+                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.firstReleaseDate')}</Typography>
+                                    <Typography level="body-md">{formatDate(firstReleaseDate)}</Typography>
                                 </Box>
                             )}
                             {createdAt && (

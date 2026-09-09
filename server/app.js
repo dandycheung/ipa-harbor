@@ -14,6 +14,7 @@ const wsManager = require('./utils/websocketServer');
 const { getTaskManager } = require('./api/dl-manager/taskManager');
 const ProgressParser = require('./utils/progressParser');
 const database = require('./utils/database');
+const { migrateExistingJsonSidecars } = require('./utils/versionMetadata');
 const { authenticateToken } = require('./middleware/auth');
 const { NODE_ENV, KEYCHAIN_PASSPHRASE } = require('./config/keychain');
 
@@ -206,6 +207,7 @@ httpServer.listen(PORT, async () => {
     // 初始化数据库
     try {
         await database.init();
+        await migrateExistingJsonSidecars();
         // console.log('数据库系统就绪');
     } catch (error) {
         console.error('数据库初始化失败:', error);
@@ -220,9 +222,9 @@ function startCronTasks() {
     const taskManager = getTaskManager();
 
     // 每3秒广播文件列表 (watch类型)
-    cron.schedule('*/3 * * * * *', () => {
+    cron.schedule('*/3 * * * * *', async () => {
         try {
-            const files = taskManager.getFiles();
+            const files = await taskManager.getFiles();
             const data = {
                 success: true,
                 data: {

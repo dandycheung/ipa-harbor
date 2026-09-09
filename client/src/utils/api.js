@@ -207,6 +207,17 @@ export async function getAppVersions(appId, useThirdPartyApi = false) {
 }
 
 /**
+ * 手动拉取单个版本的 Apple 元数据（发布日期等）
+ * @param {number|string} appId - 应用ID
+ * @param {string} versionId - 版本ID
+ */
+export async function refreshAppVersionMetadata(appId, versionId) {
+    return apiRequest(`/v1/app/${appId}/versions/${versionId}/metadata`, {
+        method: 'POST',
+    });
+}
+
+/**
  * 购买/获取应用
  * @param {string} bundleId - 应用Bundle ID
  */

@@ -157,6 +157,7 @@ export default function DownloadManager() {
                                 softwareVersionBundleId: matchingFile.softwareVersionBundleId,
                                 softwareVersionExternalIdentifier: matchingFile.softwareVersionExternalIdentifier,
                                 releaseDate: matchingFile.releaseDate,
+                                firstReleaseDate: matchingFile.firstReleaseDate,
                                 createdAt: matchingFile.createdAt,
                                 modifiedAt: matchingFile.modifiedAt
                             };
@@ -193,6 +194,7 @@ export default function DownloadManager() {
                         softwareVersionBundleId: file.softwareVersionBundleId,
                         softwareVersionExternalIdentifier: file.softwareVersionExternalIdentifier,
                         releaseDate: file.releaseDate,
+                        firstReleaseDate: file.firstReleaseDate,
                         createdAt: file.createdAt,
                         modifiedAt: file.modifiedAt
                     });

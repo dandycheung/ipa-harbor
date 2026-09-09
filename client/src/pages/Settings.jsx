@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Avatar, Box, Button, Sheet, Stack, Typography } from '@mui/joy';
+import { Avatar, Box, Button, Sheet, Stack, Switch, Typography } from '@mui/joy';
 import { Check } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -55,6 +55,8 @@ export default function Settings() {
     const [downloadFileNameTemplate, setDownloadFileNameTemplate] = useState(
         cloneTemplate(DEFAULT_DOWNLOAD_FILENAME_TEMPLATE)
     );
+    const [showVersionMetadataRefresh, setShowVersionMetadataRefresh] = useState(false);
+    const [versionMetadataRefreshSaving, setVersionMetadataRefreshSaving] = useState(false);
     const [saving, setSaving] = useState(false);
     const [dirty, setDirty] = useState(false);
 
@@ -64,6 +66,7 @@ export default function Settings() {
         }
 
         setDownloadFileNameTemplate(cloneTemplate(settings.downloadFileNameTemplate));
+        setShowVersionMetadataRefresh(settings.showVersionMetadataRefresh === true);
         setDirty(false);
     }, [settings, settingsLoaded]);
 
@@ -78,6 +81,35 @@ export default function Settings() {
     const handleResetTemplate = () => {
         setDownloadFileNameTemplate(cloneTemplate(DEFAULT_DOWNLOAD_FILENAME_TEMPLATE));
         markDirty();
+    };
+
+    const handleShowVersionMetadataRefreshChange = async (checked) => {
+        setShowVersionMetadataRefresh(checked);
+        setVersionMetadataRefreshSaving(true);
+
+        try {
+            const response = await updateAdminSettings({ showVersionMetadataRefresh: checked });
+
+            if (response.success && response.data?.settings) {
+                setSettings(response.data.settings);
+                updateAppSettings(response.data.settings);
+            }
+        } catch (error) {
+            setShowVersionMetadataRefresh(!checked);
+
+            if (isRateLimitError(error)) {
+                return;
+            }
+
+            Swal.fire({
+                icon: 'error',
+                title: t('ui.settingsSaveFailed'),
+                text: error.message,
+                confirmButtonText: t('ui.confirm'),
+            });
+        } finally {
+            setVersionMetadataRefreshSaving(false);
+        }
     };
 
     const handleSave = async () => {
@@ -250,6 +282,29 @@ export default function Settings() {
                                 markDirty();
                             }}
                         />
+                    </Sheet>
+
+                    <Sheet variant="outlined" sx={sectionSx}>
+                        <Stack
+                            direction="row"
+                            justifyContent="space-between"
+                            alignItems="center"
+                            gap={1.5}
+                        >
+                            <Box sx={{ minWidth: 0 }}>
+                                <Typography level="title-md">
+                                    {t('ui.showVersionMetadataRefresh')}
+                                </Typography>
+                                <Typography level="body-xs" sx={{ color: 'text.tertiary', mt: 0.5 }}>
+                                    {t('ui.showVersionMetadataRefreshHint')}
+                                </Typography>
+                            </Box>
+                            <Switch
+                                checked={showVersionMetadataRefresh}
+                                disabled={versionMetadataRefreshSaving}
+                                onChange={(event) => handleShowVersionMetadataRefreshChange(event.target.checked)}
+                            />
+                        </Stack>
                     </Sheet>
                 </Stack>
             </Box>

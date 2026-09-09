@@ -1,6 +1,7 @@
 const { exec } = require('child_process');
 const path = require('path');
 const https = require('https');
+const { ensureVersionMetadataCached, upsertVersionMetadataRecord } = require('../../utils/versionMetadata');
 
 // ipatool二进制文件路径
 const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
@@ -177,14 +178,31 @@ async function versionsHandler(req, res) {
                 const versionHistory = await fetchVersionHistory(appId);
 
                 if (versionHistory && versionHistory.length > 0) {
-                    // 将第三方API数据转换为标准格式
                     const versionObjects = versionHistory.map(item => ({
                         versionId: item.external_identifier.toString(),
                         bundleVersion: item.bundle_version || '未知',
                         releaseDate: item.created_at || null
                     }));
 
-                    // 构建响应数据结构
+                    await Promise.all(versionObjects.map(async (versionObj) => {
+                        if (!versionObj.releaseDate) {
+                            return;
+                        }
+
+                        await upsertVersionMetadataRecord({
+                            appId,
+                            versionId: versionObj.versionId,
+                            displayVersion: versionObj.bundleVersion !== '未知' ? versionObj.bundleVersion : null,
+                            releaseDate: versionObj.releaseDate,
+                            appleMetadata: {
+                                externalVersionID: versionObj.versionId,
+                                displayVersion: versionObj.bundleVersion,
+                                releaseDate: versionObj.releaseDate,
+                                source: 'third-party',
+                            },
+                        });
+                    }));
+
                     const responseData = {
                         externalVersionIdentifiers: versionObjects
                     };
@@ -207,35 +225,16 @@ async function versionsHandler(req, res) {
                 // console.log(`[DEBUG] 使用ipatool获取应用 ${appId} 的版本列表`);
 
                 // 同时请求ipatool和第三方API（原有逻辑）
-                const [ipatoolResult, versionHistory] = await Promise.all([
-                    executeIpatool(command),
-                    fetchVersionHistory(appId)
-                ]);
+                const ipatoolResult = await executeIpatool(command);
 
                 if (ipatoolResult.success) {
-                    // 获取版本ID数组 然好反转数组
                     const externalVersionIdentifiers = ipatoolResult.data.externalVersionIdentifiers?.reverse() || [];
+                    const versionObjects = await ensureVersionMetadataCached(
+                        appId,
+                        externalVersionIdentifiers,
+                        { fetchMissing: false }
+                    );
 
-                    // 创建版本历史映射表
-                    const historyMap = new Map();
-                    versionHistory.forEach(item => {
-                        historyMap.set(item.external_identifier, {
-                            bundleVersion: item.bundle_version,
-                            releaseDate: item.created_at
-                        });
-                    });
-
-                    // 合并数据，将版本ID数组转换为版本对象数组
-                    const versionObjects = externalVersionIdentifiers.map(versionId => {
-                        const historyInfo = historyMap.get(parseInt(versionId));
-                        return {
-                            versionId: versionId,
-                            bundleVersion: historyInfo ? historyInfo.bundleVersion : '未知',
-                            releaseDate: historyInfo ? historyInfo.releaseDate : null
-                        };
-                    });
-
-                    // 返回修改后的数据结构
                     const responseData = {
                         ...ipatoolResult.data,
                         externalVersionIdentifiers: versionObjects

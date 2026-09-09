@@ -4,6 +4,7 @@ const bplist = require('bplist-parser');
 const fs = require('fs');
 const path = require('path');
 const { resolveItemId } = require('../../utils/ipaFileName');
+const { normalizePlistMetadata, normalizeStoredMetadata } = require('../../utils/ipaMetadata');
 
 function applyItemIdFromFileName(metadata, fileName) {
     const itemId = resolveItemId(metadata, fileName);
@@ -14,33 +15,40 @@ function applyItemIdFromFileName(metadata, fileName) {
     return metadata;
 }
 
+function writeSidecarMetadata(fileName, metadata) {
+    const dataDir = path.join(__dirname, '../../data');
+    const jsonPath = path.join(dataDir, fileName.replace('.ipa', '.json'));
+    fs.writeFileSync(jsonPath, `${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
+    return jsonPath;
+}
+
 /**
  * 解析IPA文件中的 iTunesMetadata.plist
  * @param {string} fileName - IPA文件名
+ * @param {{ forceReparse?: boolean, skipWrite?: boolean }} options
  * @returns {Promise} 返回解析结果
  */
-function parseIpaMetadata(fileName) {
+function parseIpaMetadata(fileName, options = {}) {
+    const { forceReparse = false, skipWrite = false } = options;
+
     return new Promise((resolve, reject) => {
         const dataDir = path.join(__dirname, '../../data');
         const ipaPath = path.join(dataDir, fileName);
         const jsonPath = path.join(dataDir, fileName.replace('.ipa', '.json'));
 
-        // 检查IPA文件是否存在
         if (!fs.existsSync(ipaPath)) {
             return reject(new Error(`IPA文件不存在: ${fileName}`));
         }
 
-        // 检查是否已经有对应的JSON文件
-        if (fs.existsSync(jsonPath)) {
+        if (!forceReparse && fs.existsSync(jsonPath)) {
             try {
-                const existingJson = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+                const existingJson = normalizeStoredMetadata(JSON.parse(fs.readFileSync(jsonPath, 'utf8')));
                 return resolve(applyItemIdFromFileName(existingJson, fileName));
             } catch (error) {
                 console.log('读取现有JSON文件失败，重新解析IPA');
             }
         }
 
-        // 打开IPA文件（实际上是ZIP文件）
         yauzl.open(ipaPath, { lazyEntries: true }, (err, zipfile) => {
             if (err) {
                 return reject(new Error(`无法打开IPA文件: ${err.message}`));
@@ -51,13 +59,12 @@ function parseIpaMetadata(fileName) {
             zipfile.readEntry();
 
             zipfile.on('entry', (entry) => {
-                // 查找iTunesMetadata.plist文件
                 if (entry.fileName === 'iTunesMetadata.plist') {
                     metadataFound = true;
 
-                    zipfile.openReadStream(entry, (err, readStream) => {
-                        if (err) {
-                            return reject(new Error(`无法读取iTunesMetadata.plist: ${err.message}`));
+                    zipfile.openReadStream(entry, (streamErr, readStream) => {
+                        if (streamErr) {
+                            return reject(new Error(`无法读取iTunesMetadata.plist: ${streamErr.message}`));
                         }
 
                         const chunks = [];
@@ -68,40 +75,26 @@ function parseIpaMetadata(fileName) {
 
                         readStream.on('end', () => {
                             try {
-                                // 合并所有数据块
                                 const buffer = Buffer.concat(chunks);
-
                                 let metadata;
 
-                                // 检查是否为二进制plist文件（以bplist开头）
                                 if (buffer.length > 6 && buffer.toString('ascii', 0, 6) === 'bplist') {
-                                    // 使用bplist-parser解析二进制plist
-                                    try {
-                                        const result = bplist.parseBuffer(buffer);
-                                        metadata = result[0]; // bplist-parser返回数组，取第一个元素
-                                    } catch (binaryError) {
-                                        throw new Error(`解析二进制plist失败: ${binaryError.message}`);
-                                    }
+                                    const result = bplist.parseBuffer(buffer);
+                                    metadata = result[0];
                                 } else {
-                                    // 尝试作为XML plist解析
-                                    try {
-                                        const xmlString = buffer.toString('utf8');
-                                        metadata = plist.parse(xmlString);
-                                    } catch (xmlError) {
-                                        throw new Error(`解析XML plist失败: ${xmlError.message}`);
-                                    }
+                                    const xmlString = buffer.toString('utf8');
+                                    metadata = plist.parse(xmlString);
                                 }
 
                                 applyItemIdFromFileName(metadata, fileName);
+                                const normalized = normalizePlistMetadata(metadata);
 
-                                // 保存为JSON文件
-                                const jsonData = JSON.stringify(metadata, null, 2);
-                                fs.writeFileSync(jsonPath, jsonData, 'utf8');
+                                if (!skipWrite) {
+                                    writeSidecarMetadata(fileName, normalized);
+                                    console.log(`成功解析并保存: ${path.basename(jsonPath)}`);
+                                }
 
-                                console.log(`成功解析并保存: ${path.basename(jsonPath)}`);
-
-                                resolve(metadata);
-
+                                resolve(normalized);
                             } catch (parseError) {
                                 reject(new Error(`解析plist文件失败: ${parseError.message}`));
                             }
@@ -112,7 +105,6 @@ function parseIpaMetadata(fileName) {
                         });
                     });
                 } else {
-                    // 继续读取下一个条目
                     zipfile.readEntry();
                 }
             });
@@ -137,7 +129,6 @@ async function metadataHandler(req, res) {
     try {
         const { fileName } = req.body;
 
-        // 参数验证
         if (!fileName) {
             return res.status(400).json({
                 success: false,
@@ -146,7 +137,6 @@ async function metadataHandler(req, res) {
             });
         }
 
-        // 验证文件名格式
         if (!fileName.endsWith('.ipa')) {
             return res.status(400).json({
                 success: false,
@@ -159,10 +149,7 @@ async function metadataHandler(req, res) {
 
         try {
             const metadata = await parseIpaMetadata(fileName);
-
-            // 直接返回解析后的JSON内容
             return res.json(metadata);
-
         } catch (parseError) {
             console.error('解析IPA文件时出错:', parseError);
 
@@ -185,5 +172,6 @@ async function metadataHandler(req, res) {
 
 module.exports = {
     metadataHandler,
-    parseIpaMetadata
+    parseIpaMetadata,
+    writeSidecarMetadata,
 };

@@ -6,6 +6,7 @@ const searchHandler = require('./search.js');
 const listPurchasesHandler = require('./listPurchases.js');
 const purchaseHandler = require('./purchase.js');
 const { versionsHandler } = require('./versions.js');
+const versionMetadataHandler = require('./versionMetadata.js');
 const downloadHandler = require('./download.js');
 const detailsHandler = require('./details.js');
 const { getAppIcon, getAppIconUrl } = require('./icon.js');
@@ -16,6 +17,7 @@ router.get('/icon/:appid', getAppIcon); // 获取图标，不需要管理员认�
 router.get('/icon-url/:appid/:size', getAppIconUrl); // 获取图标URL，不需要管理员认证
 router.post('/details', authenticateToken, detailsHandler);
 router.post('/:bundleId/purchase', authenticateToken, purchaseHandler);
+router.post('/:appId/versions/:versionId/metadata', authenticateToken, versionMetadataHandler);
 router.post('/:appId/versions', authenticateToken, versionsHandler);
 router.post('/:appId/:versionId', authenticateToken, downloadHandler);
 

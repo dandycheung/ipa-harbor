@@ -6,7 +6,7 @@ const { getTaskManager } = require('./taskManager');
 async function filesHandler(req, res) {
     try {
         const taskManager = getTaskManager();
-        const files = taskManager.getFiles();
+        const files = await taskManager.getFiles();
 
         return res.json({
             success: true,

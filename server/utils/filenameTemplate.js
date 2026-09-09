@@ -258,7 +258,8 @@ function buildFileNameContextFromMetadata(metadata = {}, appId, versionId) {
         bundleShortVersionString: metadata.bundleShortVersionString,
         bundleDisplayName: metadata.bundleDisplayName,
         appName: metadata.bundleDisplayName,
-        releaseDateTime: metadata.releaseDate,
+        releaseDateTime: metadata.appleVersionMetadata?.releaseDate || null,
+        firstReleaseDateTime: metadata.firstReleaseDate || null,
         currentDateTime: new Date().toISOString(),
     };
 }
@@ -288,8 +289,16 @@ async function resolveDownloadFileName(storageFileName, userId) {
     }
 
     const { readAppSettings } = require('./appSettings');
+    const database = require('./database');
     const settings = await readAppSettings(userId);
     const context = buildFileNameContextFromMetadata(metadata, appId, versionId);
+
+    if (!context.releaseDateTime) {
+        const cached = await database.getAppVersionMetadata(appId, versionId);
+        context.releaseDateTime = cached?.release_date
+            || metadata.appleVersionMetadata?.releaseDate
+            || null;
+    }
 
     return buildFileNameFromTemplate(
         settings.downloadFileNameTemplate,

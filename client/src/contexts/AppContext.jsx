@@ -10,6 +10,7 @@ const initialState = {
     error: null,
     settings: {
         downloadFileNameTemplate: DEFAULT_DOWNLOAD_FILENAME_TEMPLATE,
+        showVersionMetadataRefresh: false,
     },
     settingsLoaded: false,
     // Ws 相关状态

@@ -3,7 +3,13 @@ const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const path = require('path');
 const { resolveItemId } = require('../../utils/ipaFileName');
-const { parseIpaMetadata } = require('../ipa/metadata');
+const { parseIpaMetadata, writeSidecarMetadata } = require('../ipa/metadata');
+const { resolveExternalVersionId } = require('../../utils/ipaMetadata');
+const {
+    upsertVersionMetadataRecord,
+    tryRefreshVersionMetadata,
+} = require('../../utils/versionMetadata');
+const database = require('../../utils/database');
 const wsManager = require('../../utils/websocketServer');
 
 // 配置
@@ -578,92 +584,170 @@ class TaskManager {
     }
 
     // 获取文件列表
-    getFiles() {
+    async getFiles() {
         try {
             if (!fs.existsSync(DATA_DIR)) {
                 return [];
             }
 
-            const files = fs.readdirSync(DATA_DIR)
-                .filter(file => file.endsWith('.ipa'))
-                .map(file => {
-                    const filePath = path.join(DATA_DIR, file);
-                    const stats = fs.statSync(filePath);
+            const ipaFiles = fs.readdirSync(DATA_DIR).filter((file) => file.endsWith('.ipa'));
+            const appIds = [];
 
-                    // 基础文件信息
-                    const fileInfo = {
-                        name: file,
-                        path: filePath,
-                        size: stats.size,
-                        createdAt: stats.birthtime.toISOString(),
-                        modifiedAt: stats.mtime.toISOString()
-                    };
+            const files = ipaFiles.map((file) => {
+                const filePath = path.join(DATA_DIR, file);
+                const stats = fs.statSync(filePath);
 
-                    // 尝试读取对应的JSON metadata文件
-                    const jsonFileName = file.replace('.ipa', '.json');
-                    const jsonFilePath = path.join(DATA_DIR, jsonFileName);
+                const fileInfo = {
+                    name: file,
+                    path: filePath,
+                    size: stats.size,
+                    createdAt: stats.birthtime.toISOString(),
+                    modifiedAt: stats.mtime.toISOString(),
+                };
 
-                    if (fs.existsSync(jsonFilePath)) {
-                        try {
-                            const jsonContent = fs.readFileSync(jsonFilePath, 'utf8');
-                            const metadata = JSON.parse(jsonContent);
+                const jsonFileName = file.replace('.ipa', '.json');
+                const jsonFilePath = path.join(DATA_DIR, jsonFileName);
 
-                            const itemId = resolveItemId(metadata, file);
-                            if (itemId) fileInfo.itemId = itemId;
-                            if (metadata.bundleDisplayName) fileInfo.bundleDisplayName = metadata.bundleDisplayName;
-                            if (metadata.artistName) fileInfo.artistName = metadata.artistName;
-                            if (metadata.bundleShortVersionString) fileInfo.bundleShortVersionString = metadata.bundleShortVersionString;
-                            if (metadata.bundleVersion) fileInfo.bundleVersion = metadata.bundleVersion;
-                            if (metadata['product-type']) fileInfo.productType = metadata['product-type'];
-                            if (metadata.softwareVersionBundleId) fileInfo.softwareVersionBundleId = metadata.softwareVersionBundleId;
-                            if (metadata.softwareVersionExternalIdentifier) fileInfo.softwareVersionExternalIdentifier = metadata.softwareVersionExternalIdentifier;
-                            if (metadata.releaseDate) fileInfo.releaseDate = metadata.releaseDate;
+                if (fs.existsSync(jsonFilePath)) {
+                    try {
+                        const jsonContent = fs.readFileSync(jsonFilePath, 'utf8');
+                        const metadata = JSON.parse(jsonContent);
 
-                        } catch (jsonError) {
-                            console.error(`解析JSON文件失败: ${jsonFileName}`, jsonError);
+                        const itemId = resolveItemId(metadata, file);
+                        if (itemId) {
+                            fileInfo.itemId = itemId;
+                            appIds.push(String(itemId));
                         }
+                        if (metadata.bundleDisplayName) fileInfo.bundleDisplayName = metadata.bundleDisplayName;
+                        if (metadata.artistName) fileInfo.artistName = metadata.artistName;
+                        if (metadata.bundleShortVersionString) fileInfo.bundleShortVersionString = metadata.bundleShortVersionString;
+                        if (metadata.bundleVersion) fileInfo.bundleVersion = metadata.bundleVersion;
+                        if (metadata['product-type']) fileInfo.productType = metadata['product-type'];
+                        if (metadata.softwareVersionBundleId) fileInfo.softwareVersionBundleId = metadata.softwareVersionBundleId;
+                        if (metadata.softwareVersionExternalIdentifier) {
+                            fileInfo.softwareVersionExternalIdentifier = metadata.softwareVersionExternalIdentifier;
+                        }
+                        if (metadata.firstReleaseDate) fileInfo.firstReleaseDate = metadata.firstReleaseDate;
+                        if (metadata.appleVersionMetadata?.releaseDate) {
+                            fileInfo.releaseDate = metadata.appleVersionMetadata.releaseDate;
+                        }
+                    } catch (jsonError) {
+                        console.error(`解析JSON文件失败: ${jsonFileName}`, jsonError);
                     }
+                }
 
-                    return fileInfo;
-                })
-                .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                return fileInfo;
+            });
 
-            return files;
+            const metadataRows = await database.getAppVersionMetadataByAppIds(appIds);
+            const metadataMap = new Map(
+                metadataRows.map((row) => [`${row.app_id}_${row.version_id}`, row])
+            );
+
+            files.forEach((fileInfo) => {
+                const appId = fileInfo.itemId != null ? String(fileInfo.itemId) : null;
+                const versionId = fileInfo.softwareVersionExternalIdentifier != null
+                    ? String(fileInfo.softwareVersionExternalIdentifier)
+                    : null;
+
+                if (!appId || !versionId) {
+                    return;
+                }
+
+                const row = metadataMap.get(`${appId}_${versionId}`);
+                if (row?.release_date) {
+                    fileInfo.releaseDate = row.release_date;
+                }
+                if (row?.display_version && !fileInfo.bundleShortVersionString) {
+                    fileInfo.bundleShortVersionString = row.display_version;
+                }
+            });
+
+            return files.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
         } catch (error) {
             console.error('获取文件列表失败:', error);
             return [];
         }
     }
 
-    // 解析metadata并广播
+    // 解析metadata并广播（Apple 版本元数据获取失败不阻断下载完成）
     async parseMetadataAndBroadcast(fileName, taskId) {
+        const task = this.tasks.get(taskId);
+        const warnings = [];
+        let ipaMetadata = null;
+        let appleVersionMetadata = null;
+
         try {
             console.log(`开始解析metadata: ${fileName}`);
-            const metadata = await parseIpaMetadata(fileName);
 
-            // 构建广播数据，格式与metadata接口返回一致
+            try {
+                ipaMetadata = await parseIpaMetadata(fileName, { forceReparse: true, skipWrite: true });
+            } catch (parseError) {
+                warnings.push(`IPA plist 解析失败: ${parseError.message}`);
+                console.warn(`IPA plist 解析失败: ${fileName}`, parseError.message);
+            }
+
+            const resolvedVersionId = resolveExternalVersionId(task, fileName);
+
+            if (resolvedVersionId && task?.appId) {
+                const refreshed = await tryRefreshVersionMetadata(task.appId, resolvedVersionId, {
+                    bundleId: task.bundleId,
+                    ipaMetadata,
+                    updateSidecar: false,
+                });
+
+                if (refreshed) {
+                    appleVersionMetadata = refreshed.appleMetadata;
+                } else {
+                    warnings.push('Apple 版本元数据获取失败，已跳过');
+                    await upsertVersionMetadataRecord({
+                        appId: task.appId,
+                        versionId: resolvedVersionId,
+                        bundleId: task.bundleId,
+                        displayVersion: ipaMetadata?.bundleShortVersionString || null,
+                        ipaMetadata,
+                    }).catch((dbError) => {
+                        console.warn('写入版本元数据缓存失败:', dbError.message);
+                    });
+                }
+            }
+
+            if (ipaMetadata) {
+                const sidecarMetadata = {
+                    ...ipaMetadata,
+                    ...(appleVersionMetadata ? {
+                        appleVersionMetadata: {
+                            ...appleVersionMetadata,
+                            fetchedAt: new Date().toISOString(),
+                        },
+                    } : {}),
+                };
+
+                writeSidecarMetadata(fileName, sidecarMetadata);
+            }
+
             const broadcastData = {
                 success: true,
-                message: `任务 ${taskId} 下载完成，metadata解析成功`,
-                data: metadata,
-                taskId: taskId,
-                fileName: fileName
+                message: warnings.length > 0
+                    ? `任务 ${taskId} 下载完成（${warnings.join('；')}）`
+                    : `任务 ${taskId} 下载完成，metadata解析成功`,
+                data: ipaMetadata,
+                warnings,
+                taskId,
+                fileName,
             };
 
-            // 广播task-completed消息
             wsManager.broadcastToDefault('task-completed', JSON.stringify(broadcastData));
-
-            console.log(`metadata解析完成并已广播: ${fileName}`);
+            console.log(`metadata处理完成并已广播: ${fileName}`);
         } catch (error) {
-            console.error(`metadata解析失败: ${fileName}`, error);
+            console.error(`metadata处理异常: ${fileName}`, error);
 
-            // 即使解析失败也要广播完成消息
             const errorData = {
-                success: false,
-                message: `任务 ${taskId} 下载完成，但metadata解析失败`,
+                success: true,
+                message: `任务 ${taskId} 下载完成，但 metadata 处理异常: ${error.message}`,
                 error: error.message,
-                taskId: taskId,
-                fileName: fileName
+                taskId,
+                fileName,
             };
 
             wsManager.broadcastToDefault('task-completed', JSON.stringify(errorData));

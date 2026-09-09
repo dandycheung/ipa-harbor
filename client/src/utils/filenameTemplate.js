@@ -370,6 +370,6 @@ export function buildFileNameContextFromMetadata(metadata = {}, appId, versionId
         bundleShortVersionString: metadata.bundleShortVersionString,
         bundleDisplayName: metadata.bundleDisplayName,
         appName: metadata.bundleDisplayName,
-        releaseDateTime: metadata.releaseDate,
+        releaseDateTime: metadata.appleVersionMetadata?.releaseDate || '',
     };
 }
