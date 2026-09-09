@@ -1,5 +1,6 @@
 import Swal from 'sweetalert2';
 import i18n from '../i18n';
+import { isOtaInstallEnabled } from './otaInstallPreference';
 
 const API_BASE_URL =
     import.meta.env.MODE === 'production' ?
@@ -273,12 +274,31 @@ export async function clearAllTasks() {
 }
 
 /**
- * 获取应用安装包URL
+ * 当前是否可用 OTA 安装（HTTPS + 本地开关）
+ */
+export function canUseOtaInstall() {
+    return typeof window !== 'undefined'
+        && window.isSecureContext
+        && isOtaInstallEnabled();
+}
+
+/**
+ * 通过磁盘存储文件名（不含 .ipa 或含均可）获取 OTA 安装 URL
+ * @param {string} fileBaseName - 如 6766042246_887851211
+ */
+export function getAppInstallPackageUrlByFileName(fileBaseName) {
+    const baseName = String(fileBaseName).replace(/\.ipa$/i, '');
+    const manifestUrl = `${API_BASE_URL}/v1/ipa/install-package/${encodeURIComponent(baseName)}/manifest.plist`;
+    return `itms-services://?action=download-manifest&url=${encodeURIComponent(manifestUrl)}`;
+}
+
+/**
+ * 获取应用安装包 URL（默认 appId_versionId 命名）
  * @param {number} appId - 应用ID
  * @param {string} versionId - 版本ID
  */
 export function getAppInstallPackageUrl(appId, versionId) {
-    return `itms-services://?action=download-manifest&url=${API_BASE_URL}/v1/ipa/install-package/${appId}_${versionId}/manifest.plist`;
+    return getAppInstallPackageUrlByFileName(`${appId}_${versionId}`);
 }
 
 /**
@@ -295,7 +315,7 @@ export function getAppDownloadPackageUrl(appId, versionId) {
  * @param {string} fileName - 如 6766042246_887851211.ipa
  */
 export function getAppDownloadPackageUrlByFileName(fileName) {
-    return `${API_BASE_URL}/v1/ipa/getpackage/${fileName}`;
+    return `${API_BASE_URL}/v1/ipa/getpackage/${encodeURIComponent(fileName)}`;
 }
 
 // ===== 管理员认证相关API =====

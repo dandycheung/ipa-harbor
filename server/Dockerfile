@@ -42,13 +42,20 @@ ENV NODE_ENV=production
 ENV APP_VERSION=${APP_VERSION}
 ENV KEYCHAIN_PASSPHRASE=""
 ENV PORT=3080
+ENV HTTPS_PORT=3443
 ENV ALLOWED_DOMAINS=""
 ENV ENABLE_MORE_LOGS=false
 ENV ALLOW_LAN_ACCESS=true
+# Linux 容器无 GUI keyring，避免 dbus 阻塞 ipatool 登录
+ENV DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent
+# ipatool 配置目录为 $HOME/.ipatool，指向 data 卷以便持久化
+ENV HOME=/app/data
+# ipatool 首次 Apple ID 认证需 Unicorn/SAP 模拟，宿主机建议 ≥1GB 可用内存或配置 ≥2GB swap
 
 # 创建非 root 用户和数据目录
 RUN groupadd -g 1001 nodejs && \
     useradd -r -u 1001 -g nodejs -d /app -s /usr/sbin/nologin ij369 && \
+    mkdir -p /app/data/.ipatool && \
     chown -R ij369:nodejs /app
 
 USER ij369

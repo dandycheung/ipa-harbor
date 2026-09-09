@@ -1,0 +1,126 @@
+diff --git a/cmd/download.go b/cmd/download.go
+index a40529f..5fb6f44 100644
+--- a/cmd/download.go
++++ b/cmd/download.go
+@@ -25,6 +25,7 @@ func downloadCmdWithAppStore(appStore func() appstore.AppStore) *cobra.Command {
+ 		bundleID          string
+ 		externalVersionID string
+ 		platformValue     string
++		otaCompat         bool
+ 	)
+ 
+ 	cmd := &cobra.Command{
+@@ -133,7 +134,7 @@ func downloadCmdWithAppStore(appStore func() appstore.AppStore) *cobra.Command {
+ 					return err
+ 				}
+ 
+-				if err := replicateDownloadSinf(store, platform, out); err != nil {
++				if err := replicateDownloadSinf(store, platform, out, otaCompat); err != nil {
+ 					return err
+ 				}
+ 
+@@ -172,6 +173,7 @@ func downloadCmdWithAppStore(appStore func() appstore.AppStore) *cobra.Command {
+ 	cmd.Flags().StringVar(&externalVersionID, "external-version-id", "", "External version identifier of the target app (defaults to latest version when not specified)")
+ 	cmd.Flags().StringVar(&platformValue, "platform", "", "Platform to download for: iphone (iOS), ipad (iPadOS), appletv (tvOS), visionos, or macos")
+ 	cmd.Flags().BoolVar(&acquireLicense, "purchase", false, "Obtain a license for the app if needed")
++	cmd.Flags().BoolVar(&otaCompat, "ota-compat", false, "Recompress the package for over-the-air (itms-services) installs; slower than the default byte-for-byte copy")
+ 
+ 	return cmd
+ }
+@@ -181,10 +183,14 @@ type sinfReplicator interface {
+ }
+ 
+ //nolint:wrapcheck
+-func replicateDownloadSinf(store sinfReplicator, platform appstore.Platform, out appstore.DownloadOutput) error {
++func replicateDownloadSinf(store sinfReplicator, platform appstore.Platform, out appstore.DownloadOutput, recompress bool) error {
+ 	if platform == appstore.PlatformMacOS && len(out.Sinfs) == 0 {
+ 		return nil
+ 	}
+ 
+-	return store.ReplicateSinf(appstore.ReplicateSinfInput{Sinfs: out.Sinfs, PackagePath: out.DestinationPath})
++	return store.ReplicateSinf(appstore.ReplicateSinfInput{
++		Sinfs:       out.Sinfs,
++		PackagePath: out.DestinationPath,
++		Recompress:  recompress,
++	})
+ }
+diff --git a/pkg/appstore/appstore_download.go b/pkg/appstore/appstore_download.go
+index 27b4d83..e3e616b 100644
+--- a/pkg/appstore/appstore_download.go
++++ b/pkg/appstore/appstore_download.go
+@@ -353,7 +353,8 @@ func (t *appstore) applyPatches(item downloadItemResult, acc Account, src, dst s
+ 	dstZip := zip.NewWriter(dstFile)
+ 	defer dstZip.Close()
+ 
+-	err = t.replicateZip(srcZip, dstZip)
++	// Raw copy here; ReplicateSinf re-encodes entries when --ota-compat is set.
++	err = t.replicateZip(srcZip, dstZip, false)
+ 	if err != nil {
+ 		return fmt.Errorf("failed to replicate zip: %w", err)
+ 	}
+diff --git a/pkg/appstore/appstore_replicate_sinf.go b/pkg/appstore/appstore_replicate_sinf.go
+index cedc267..3bc1eac 100644
+--- a/pkg/appstore/appstore_replicate_sinf.go
++++ b/pkg/appstore/appstore_replicate_sinf.go
+@@ -23,6 +23,9 @@ type Sinf struct {
+ type ReplicateSinfInput struct {
+ 	Sinfs       []Sinf
+ 	PackagePath string
++
++	// Recompress re-encodes deflated entries for itms-services OTA streaming unzip.
++	Recompress bool
+ }
+ 
+ func (t *appstore) ReplicateSinf(input ReplicateSinfInput) error {
+@@ -73,7 +76,7 @@ func (t *appstore) writeReplicatedZip(input ReplicateSinfInput, tmpPath string)
+ 		}
+ 	}()
+ 
+-	err = t.replicateZip(zipReader, zipWriter)
++	err = t.replicateZip(zipReader, zipWriter, input.Recompress)
+ 	if err != nil {
+ 		return fmt.Errorf("failed to replicate zip: %w", err)
+ 	}
+@@ -162,9 +165,13 @@ func (t *appstore) replicateSinfFromInfo(info packageInfo, zip *zip.Writer, sinf
+ 	return nil
+ }
+ 
+-func (t *appstore) replicateZip(src *zip.ReadCloser, dst *zip.Writer) error {
++func (t *appstore) replicateZip(src *zip.ReadCloser, dst *zip.Writer, recompress bool) error {
+ 	for _, file := range src.File {
+ 		err := func() error {
++			if recompress && file.Method == zip.Deflate {
++				return t.recompressFile(file, dst)
++			}
++
+ 			srcFile, err := file.OpenRaw()
+ 			if err != nil {
+ 				return fmt.Errorf("failed to open file: %w", err)
+@@ -192,6 +199,27 @@ func (t *appstore) replicateZip(src *zip.ReadCloser, dst *zip.Writer) error {
+ 	return nil
+ }
+ 
++func (*appstore) recompressFile(file *zip.File, dst *zip.Writer) error {
++	srcFile, err := file.Open()
++	if err != nil {
++		return fmt.Errorf("failed to open file: %w", err)
++	}
++	defer srcFile.Close()
++
++	header := file.FileHeader
++	dstFile, err := dst.CreateHeader(&header)
++	if err != nil {
++		return fmt.Errorf("failed to create file: %w", err)
++	}
++
++	_, err = io.Copy(dstFile, srcFile)
++	if err != nil {
++		return fmt.Errorf("failed to copy file: %w", err)
++	}
++
++	return nil
++}
++
+ func (*appstore) readInfoPlist(reader *zip.ReadCloser) (*packageInfo, error) {
+ 	for _, file := range reader.File {
+ 		if strings.Contains(file.Name, ".app/Info.plist") {

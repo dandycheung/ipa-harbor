@@ -7,6 +7,7 @@ REPO_ROOT="$SCRIPT_DIR"
 SERVER_DIR="$REPO_ROOT/server"
 BIN_DIR="$SERVER_DIR/bin"
 BUILD_IPATOOL_SCRIPT="$REPO_ROOT/build_ipatool_zh.sh"
+IPATOOL_SOURCE="${IPATOOL_SOURCE:-haughtyeyes+ota}"
 
 IMAGE_NAME="${IMAGE_NAME:-ipaharbor}"
 TAG="${TAG:-latest}"
@@ -65,8 +66,9 @@ if [[ "$FETCH" -eq 1 ]]; then
     echo "无法执行: $BUILD_IPATOOL_SCRIPT（可先 chmod +x build_ipatool_zh.sh）"
     exit 1
   fi
-  echo "执行 build_ipatool_zh.sh 从源码编译 ipatool …"
-  "$BUILD_IPATOOL_SCRIPT" --choice 1
+  echo "执行 build_ipatool_zh.sh（--source ${IPATOOL_SOURCE}）…"
+  git -C "${REPO_ROOT}" submodule update --init ipatool
+  "$BUILD_IPATOOL_SCRIPT" --source "${IPATOOL_SOURCE}" --choice 1
 fi
 
 # Dockerfile 需要 bin 下对应架构的 ipatool *.tar.gz

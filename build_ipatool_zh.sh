@@ -6,31 +6,49 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="${SCRIPT_DIR}/server/bin"
 CACHE_DIR="${SCRIPT_DIR}/server/.cache"
+SUBMODULE_DIR="${SCRIPT_DIR}/ipatool"
 SRC_DIR="${CACHE_DIR}/ipatool-src"
 GO_MOD_CACHE="${CACHE_DIR}/go-mod"
 GO_BUILD_CACHE="${CACHE_DIR}/go-build"
 BUILD_DARWIN=0
 BUILD_LINUX=0
 BUILD_ARCHES=()
-IPATOOL_SOURCE="official"
+IPATOOL_SOURCE="haughtyeyes+ota"
 IPATOOL_REPO=""
 IPATOOL_REF=""
+IPATOOL_USE_SUBMODULE=0
+IPATOOL_APPLY_OTA_PATCH=0
+IPATOOL_OTA_PATCH="${IPATOOL_OTA_PATCH:-${SCRIPT_DIR}/server/patches/ipatool-haughtyeyes-ota-compat.patch}"
 REPO_EXPLICIT=0
 REF_EXPLICIT=0
 GO_IMAGE="${GO_IMAGE:-golang:1.25-bookworm}"
 
 resolve_ipatool_source() {
+  IPATOOL_USE_SUBMODULE=0
+  IPATOOL_APPLY_OTA_PATCH=0
+
   case "$IPATOOL_SOURCE" in
     official|majd|default)
       IPATOOL_REPO="${IPATOOL_REPO:-https://github.com/majd/ipatool.git}"
       IPATOOL_REF="${IPATOOL_REF:-main}"
       ;;
     haughtyeyes|fork|empty-volume-store)
+      IPATOOL_USE_SUBMODULE=1
+      IPATOOL_REPO="${IPATOOL_REPO:-https://github.com/HaughtyEyes/ipatool.git}"
+      IPATOOL_REF="${IPATOOL_REF:-fix-empty-volume-store-response}"
+      ;;
+    ota|iosconstantine|ota-compat)
+      IPATOOL_REPO="${IPATOOL_REPO:-https://github.com/iosconstantine/ipatool.git}"
+      IPATOOL_REF="${IPATOOL_REF:-feat/ota-compat-flag}"
+      ;;
+    haughtyeyes+ota|haughtyeyes-ota|full|both)
+      IPATOOL_USE_SUBMODULE=1
+      IPATOOL_APPLY_OTA_PATCH=1
       IPATOOL_REPO="${IPATOOL_REPO:-https://github.com/HaughtyEyes/ipatool.git}"
       IPATOOL_REF="${IPATOOL_REF:-fix-empty-volume-store-response}"
       ;;
     *)
-      echo "未知源码: $IPATOOL_SOURCE（可选 official | haughtyeyes）" >&2
+      echo "未知源码: $IPATOOL_SOURCE（可选 official | haughtyeyes | ota | haughtyeyes+ota）" >&2
       exit 1
       ;;
   esac
@@ -42,7 +60,17 @@ show_ipatool_source() {
   if [[ "$REPO_EXPLICIT" -eq 1 || "$REF_EXPLICIT" -eq 1 ]]; then
     label="custom"
   fi
-  echo "当前源码 (${label}): ${IPATOOL_REPO} @ ${IPATOOL_REF}"
+  if [[ "$IPATOOL_USE_SUBMODULE" -eq 1 ]]; then
+    echo "当前源码 (${label}): git submodule ipatool"
+    if git -C "${SUBMODULE_DIR}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      echo "  Submodule commit: $(git -C "${SUBMODULE_DIR}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    fi
+  else
+    echo "当前源码 (${label}): ${IPATOOL_REPO} @ ${IPATOOL_REF}"
+  fi
+  if [[ "$IPATOOL_APPLY_OTA_PATCH" -eq 1 ]]; then
+    echo "OTA 补丁: ${IPATOOL_OTA_PATCH}"
+  fi
 }
 
 usage() {
@@ -55,7 +83,7 @@ Options:
   --choice N    非交互指定选项：1 | 2 | 3 | 4 | 0（0 为退出）
   --arch ARCH   仅编译 Linux：amd64 | arm64 | all（与 --darwin 组合时跳过菜单）
   --darwin      额外编译本机 macOS 二进制到 server/bin/ipatool
-  --source NAME 源码预设：official | haughtyeyes（默认 official）
+  --source NAME 源码预设：official | haughtyeyes | ota | haughtyeyes+ota（默认 haughtyeyes+ota）
   --repo URL    自定义源码仓库地址
   --ref REF     自定义分支、tag 或 commit
   -h, --help    显示帮助
@@ -65,11 +93,14 @@ Options:
 
 源码预设:
   official       majd/ipatool @ main
-  haughtyeyes    HaughtyEyes/ipatool @ fix-empty-volume-store-response
+  haughtyeyes    git submodule ipatool（HaughtyEyes @ fix-empty-volume-store-response）
+  ota            iosconstantine/ipatool @ feat/ota-compat-flag（支持 --ota-compat，用于 itms-services OTA 安装）
+  haughtyeyes+ota  git submodule ipatool + OTA 兼容补丁（ipa-harbor 推荐）
 
 说明:
-  首次编译较慢（拉镜像 + 下载 Go 依赖）。后续会复用 server/.cache 中的源码与 Go 缓存。
-  切换 --source 或 --repo 时会清除旧缓存并重新 clone。
+  haughtyeyes / haughtyeyes+ota 使用 ipatool/ 子模块。首次请先执行: git submodule update --init ipatool
+  首次编译较慢（拉镜像 + 下载 Go 依赖）。非 submodule 源码会复用 server/.cache。
+  切换 --source 或 --repo 时会清除旧缓存并重新 clone（不含 submodule 预设）。
   Apple Silicon 上编译 linux/amd64 需 QEMU 模拟，比 arm64 慢很多。
 EOF
 }
@@ -205,8 +236,73 @@ fi
 
 mkdir -p "$BIN_DIR" "$GO_MOD_CACHE" "$GO_BUILD_CACHE"
 
-sync_source() {
+get_patch_key() {
+  if [[ "$IPATOOL_APPLY_OTA_PATCH" -eq 1 ]]; then
+    shasum -a 256 "$IPATOOL_OTA_PATCH" | awk '{print $1}'
+    return
+  fi
+  printf ''
+}
+
+apply_ota_compat_patch() {
+  [[ "$IPATOOL_APPLY_OTA_PATCH" -eq 1 ]] || return 0
+
+  if grep -q 'ota-compat' "${SRC_DIR}/cmd/download.go" 2>/dev/null; then
+    echo "OTA 兼容补丁已应用，跳过"
+    return 0
+  fi
+
+  if [[ ! -f "$IPATOOL_OTA_PATCH" ]]; then
+    echo "找不到 OTA 补丁: ${IPATOOL_OTA_PATCH}" >&2
+    exit 1
+  fi
+
+  echo "应用 OTA 兼容补丁 …"
+  if ! git -C "$SRC_DIR" apply --check "$IPATOOL_OTA_PATCH" 2>/dev/null; then
+    echo "OTA 补丁无法应用到 ipatool @ $(git -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)。" >&2
+    echo "请更新 ${IPATOOL_OTA_PATCH} 或升级 ipatool 子模块 commit。" >&2
+    exit 1
+  fi
+  git -C "$SRC_DIR" apply "$IPATOOL_OTA_PATCH"
+}
+
+sync_submodule_source() {
+  local desired_patch_key marker_file="${CACHE_DIR}/ipatool-patch-key"
+  desired_patch_key="$(get_patch_key)"
+
+  SRC_DIR="${SUBMODULE_DIR}"
+
+  echo "更新 ipatool 子模块 …"
+  git -C "${SCRIPT_DIR}" submodule update --init ipatool
+
+  if ! git -C "$SRC_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "ipatool 子模块初始化失败，请先执行:" >&2
+    echo "  git submodule update --init ipatool" >&2
+    exit 1
+  fi
+
+  echo "重置子模块工作区 …"
+  git -C "$SRC_DIR" reset --hard HEAD
+  git -C "$SRC_DIR" clean -fd
+
+  apply_ota_compat_patch
+  printf '%s' "$desired_patch_key" > "$marker_file"
+}
+
+sync_cached_source() {
   local cached_remote=""
+  local desired_patch_key marker_file="${CACHE_DIR}/ipatool-patch-key"
+  desired_patch_key="$(get_patch_key)"
+
+  SRC_DIR="${CACHE_DIR}/ipatool-src"
+
+  if [[ -d "${SRC_DIR}/.git" && -f "$marker_file" ]]; then
+    if [[ "$(cat "$marker_file")" != "$desired_patch_key" ]]; then
+      echo "OTA 补丁组合已变更，重新 clone …"
+      rm -rf "$SRC_DIR"
+    fi
+  fi
+
   if [[ -d "${SRC_DIR}/.git" ]]; then
     cached_remote="$(git -C "$SRC_DIR" remote get-url origin 2>/dev/null || true)"
     if [[ -n "$cached_remote" && "$cached_remote" != "$IPATOOL_REPO" ]]; then
@@ -230,6 +326,16 @@ sync_source() {
   fi
 
   git -C "$SRC_DIR" fetch --depth 1 origin 'refs/tags/v*' 2>/dev/null || true
+  apply_ota_compat_patch
+  printf '%s' "$desired_patch_key" > "$marker_file"
+}
+
+sync_source() {
+  if [[ "$IPATOOL_USE_SUBMODULE" -eq 1 ]]; then
+    sync_submodule_source
+    return
+  fi
+  sync_cached_source
 }
 
 sync_source

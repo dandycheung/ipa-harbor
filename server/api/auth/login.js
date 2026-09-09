@@ -7,9 +7,15 @@ const { clearIpatoolAccountCache } = require('../../utils/ipatoolAccount');
 const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
 const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
 
-/** 首次登录可能较慢，适当延长超时 */
-const LOGIN_TIMEOUT_MS = 180000;
-const INFO_TIMEOUT_MS = 30000;
+/** 首次登录可能较慢（SAP 初始化），适当延长超时 */
+const LOGIN_TIMEOUT_MS = 600000;
+const INFO_TIMEOUT_MS = 60000;
+
+const IPATOOL_EXEC_ENV = {
+    ...process.env,
+    // Linux Docker 无 GUI keyring 时避免 dbus 阻塞
+    DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS || 'unix:path=/nonexistent',
+};
 
 /**
  * 执行 ipatool 命令并解析 JSON 输出
@@ -19,7 +25,7 @@ const INFO_TIMEOUT_MS = 30000;
  */
 function executeIpatool(command, timeoutMs = INFO_TIMEOUT_MS) {
     return new Promise((resolve, reject) => {
-        exec(command, { timeout: timeoutMs }, (error, stdout, stderr) => {
+        exec(command, { timeout: timeoutMs, env: IPATOOL_EXEC_ENV }, (error, stdout, stderr) => {
             const parsed = parseIpatoolOutput(stdout, stderr);
 
             if (parsed.needsTwoFactor) {
@@ -139,9 +145,19 @@ async function loginHandler(req, res) {
                 message: '登录失败，未能获取用户信息'
             });
         } catch (execError) {
-            console.error('执行ipatool命令时出错:', execError?.stdout || execError?.error);
+            console.error(
+                '执行ipatool命令时出错:',
+                execError?.stderr || execError?.stdout || execError?.error
+            );
 
             const combinedOutput = `${execError.stdout || ''}\n${execError.stderr || ''}`;
+            if (combinedOutput.includes('Could not allocate dynamic translator buffer')) {
+                return res.status(500).json({
+                    success: false,
+                    message: '服务器内存不足，无法完成 Apple ID 首次认证。请为宿主机增加内存或配置至少 2GB swap 后重试',
+                    error: execError.error || 'ipatool 认证引擎初始化失败',
+                });
+            }
             if (combinedOutput.includes('2FA code is required')) {
                 return res.status(200).json({
                     success: false,

@@ -15,6 +15,7 @@ import {
     templateHasVariable,
 } from '../utils/filenameTemplate';
 import { normalizeLanguageCode } from '../i18n';
+import { useOtaInstallPreference } from '../utils/otaInstallPreference';
 import Swal from 'sweetalert2';
 
 const scrollSx = {
@@ -52,6 +53,7 @@ export default function Settings() {
     const { user, isAuthenticated, loading, settings, setSettings, settingsLoaded } = useApp();
     const { updateAppSettings } = useAdmin();
     const [language, setLanguage] = useState(normalizeLanguageCode(i18n.language));
+    const [otaInstallEnabled, setOtaInstallEnabled] = useOtaInstallPreference();
     const [downloadFileNameTemplate, setDownloadFileNameTemplate] = useState(
         cloneTemplate(DEFAULT_DOWNLOAD_FILENAME_TEMPLATE)
     );
@@ -239,6 +241,28 @@ export default function Settings() {
                                 variant="select"
                                 value={language}
                                 onChange={handleLanguageChange}
+                            />
+                        </Stack>
+                    </Sheet>
+
+                    <Sheet variant="outlined" sx={sectionSx}>
+                        <Stack
+                            direction="row"
+                            justifyContent="space-between"
+                            alignItems="center"
+                            gap={1.5}
+                        >
+                            <Box sx={{ minWidth: 0 }}>
+                                <Typography level="title-md">
+                                    {t('ui.enableOtaInstall')}
+                                </Typography>
+                                <Typography level="body-xs" sx={{ color: 'text.tertiary', mt: 0.5 }}>
+                                    {t('ui.enableOtaInstallHint')}
+                                </Typography>
+                            </Box>
+                            <Switch
+                                checked={otaInstallEnabled}
+                                onChange={(event) => setOtaInstallEnabled(event.target.checked)}
                             />
                         </Stack>
                     </Sheet>

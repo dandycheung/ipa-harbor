@@ -49,6 +49,22 @@ function extractAccountFromLines(lines) {
     return null;
 }
 
+function extractKnownStderrError(stderr) {
+    if (typeof stderr !== 'string' || !stderr.trim()) {
+        return null;
+    }
+
+    if (stderr.includes('Could not allocate dynamic translator buffer')) {
+        return 'ipatool 认证引擎初始化失败：服务器可用内存不足（Linux 首次登录约需 1GB+ 内存或 swap）';
+    }
+
+    if (stderr.includes('failed to create config directory')) {
+        return 'ipatool 配置目录初始化失败，请检查 data 卷挂载与 HOME 环境变量';
+    }
+
+    return null;
+}
+
 function extractErrorFromLines(lines) {
     for (let i = lines.length - 1; i >= 0; i -= 1) {
         const line = lines[i];
@@ -74,6 +90,15 @@ function parseIpatoolOutput(stdout, stderr = '') {
             success: false,
             needsTwoFactor: true,
             message: '需要二次验证码',
+            rawOutput: combined,
+        };
+    }
+
+    const stderrError = extractKnownStderrError(stderr);
+    if (stderrError) {
+        return {
+            success: false,
+            error: stderrError,
             rawOutput: combined,
         };
     }

@@ -7,6 +7,7 @@ REPO_ROOT="$SCRIPT_DIR"
 SERVER_DIR="$REPO_ROOT/server"
 BIN_DIR="$SERVER_DIR/bin"
 BUILD_IPATOOL_SCRIPT="$REPO_ROOT/build_ipatool.sh"
+IPATOOL_SOURCE="${IPATOOL_SOURCE:-haughtyeyes+ota}"
 
 IMAGE_NAME="${IMAGE_NAME:-ipaharbor}"
 TAG="${TAG:-latest}"
@@ -65,8 +66,9 @@ if [[ "$FETCH" -eq 1 ]]; then
     echo "Cannot execute: $BUILD_IPATOOL_SCRIPT (try: chmod +x build_ipatool.sh)" >&2
     exit 1
   fi
-  echo "Running build_ipatool.sh to build ipatool from source …"
-  "$BUILD_IPATOOL_SCRIPT" --choice 1
+  echo "Running build_ipatool.sh (--source ${IPATOOL_SOURCE}) …"
+  git -C "${REPO_ROOT}" submodule update --init ipatool
+  "$BUILD_IPATOOL_SCRIPT" --source "${IPATOOL_SOURCE}" --choice 1
 fi
 
 # Dockerfile needs ipatool *.tar.gz under bin directory

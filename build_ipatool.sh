@@ -6,31 +6,49 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="${SCRIPT_DIR}/server/bin"
 CACHE_DIR="${SCRIPT_DIR}/server/.cache"
+SUBMODULE_DIR="${SCRIPT_DIR}/ipatool"
 SRC_DIR="${CACHE_DIR}/ipatool-src"
 GO_MOD_CACHE="${CACHE_DIR}/go-mod"
 GO_BUILD_CACHE="${CACHE_DIR}/go-build"
 BUILD_DARWIN=0
 BUILD_LINUX=0
 BUILD_ARCHES=()
-IPATOOL_SOURCE="official"
+IPATOOL_SOURCE="haughtyeyes+ota"
 IPATOOL_REPO=""
 IPATOOL_REF=""
+IPATOOL_USE_SUBMODULE=0
+IPATOOL_APPLY_OTA_PATCH=0
+IPATOOL_OTA_PATCH="${IPATOOL_OTA_PATCH:-${SCRIPT_DIR}/server/patches/ipatool-haughtyeyes-ota-compat.patch}"
 REPO_EXPLICIT=0
 REF_EXPLICIT=0
 GO_IMAGE="${GO_IMAGE:-golang:1.25-bookworm}"
 
 resolve_ipatool_source() {
+  IPATOOL_USE_SUBMODULE=0
+  IPATOOL_APPLY_OTA_PATCH=0
+
   case "$IPATOOL_SOURCE" in
     official|majd|default)
       IPATOOL_REPO="${IPATOOL_REPO:-https://github.com/majd/ipatool.git}"
       IPATOOL_REF="${IPATOOL_REF:-main}"
       ;;
     haughtyeyes|fork|empty-volume-store)
+      IPATOOL_USE_SUBMODULE=1
+      IPATOOL_REPO="${IPATOOL_REPO:-https://github.com/HaughtyEyes/ipatool.git}"
+      IPATOOL_REF="${IPATOOL_REF:-fix-empty-volume-store-response}"
+      ;;
+    ota|iosconstantine|ota-compat)
+      IPATOOL_REPO="${IPATOOL_REPO:-https://github.com/iosconstantine/ipatool.git}"
+      IPATOOL_REF="${IPATOOL_REF:-feat/ota-compat-flag}"
+      ;;
+    haughtyeyes+ota|haughtyeyes-ota|full|both)
+      IPATOOL_USE_SUBMODULE=1
+      IPATOOL_APPLY_OTA_PATCH=1
       IPATOOL_REPO="${IPATOOL_REPO:-https://github.com/HaughtyEyes/ipatool.git}"
       IPATOOL_REF="${IPATOOL_REF:-fix-empty-volume-store-response}"
       ;;
     *)
-      echo "Unknown source: $IPATOOL_SOURCE (expected official | haughtyeyes)" >&2
+      echo "Unknown source: $IPATOOL_SOURCE (expected official | haughtyeyes | ota | haughtyeyes+ota)" >&2
       exit 1
       ;;
   esac
@@ -42,7 +60,17 @@ show_ipatool_source() {
   if [[ "$REPO_EXPLICIT" -eq 1 || "$REF_EXPLICIT" -eq 1 ]]; then
     label="custom"
   fi
-  echo "Current source (${label}): ${IPATOOL_REPO} @ ${IPATOOL_REF}"
+  if [[ "$IPATOOL_USE_SUBMODULE" -eq 1 ]]; then
+    echo "Current source (${label}): git submodule ipatool"
+    if git -C "${SUBMODULE_DIR}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      echo "  Submodule commit: $(git -C "${SUBMODULE_DIR}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    fi
+  else
+    echo "Current source (${label}): ${IPATOOL_REPO} @ ${IPATOOL_REF}"
+  fi
+  if [[ "$IPATOOL_APPLY_OTA_PATCH" -eq 1 ]]; then
+    echo "OTA patch: ${IPATOOL_OTA_PATCH}"
+  fi
 }
 
 usage() {
@@ -55,7 +83,7 @@ Options:
   --choice N    Non-interactive choice: 1 | 2 | 3 | 4 | 0 (0 = exit)
   --arch ARCH   Linux only: amd64 | arm64 | all (skips menu when combined with --darwin)
   --darwin      Also build a local macOS binary at server/bin/ipatool
-  --source NAME Source preset: official | haughtyeyes (default: official)
+  --source NAME Source preset: official | haughtyeyes | ota | haughtyeyes+ota (default: haughtyeyes+ota)
   --repo URL    Override source repository URL
   --ref REF     Override branch, tag, or commit
   -h, --help    Show this help
@@ -65,11 +93,14 @@ Environment:
 
 Source presets:
   official       majd/ipatool @ main
-  haughtyeyes    HaughtyEyes/ipatool @ fix-empty-volume-store-response
+  haughtyeyes    git submodule ipatool (HaughtyEyes @ fix-empty-volume-store-response)
+  ota            iosconstantine/ipatool @ feat/ota-compat-flag (--ota-compat for itms-services)
+  haughtyeyes+ota  git submodule ipatool + OTA compat patch (recommended for ipa-harbor)
 
 Notes:
-  The first build is slow (pull image + Go modules). Later builds reuse server/.cache.
-  Switching --source or --repo clears cached source and re-clones.
+  haughtyeyes / haughtyeyes+ota use the ipatool/ submodule. First time: git submodule update --init ipatool
+  The first build is slow (pull image + Go modules). Later builds reuse server/.cache (non-submodule sources).
+  Switching --source or --repo clears cached source and re-clones (non-submodule sources only).
   On Apple Silicon, linux/amd64 uses QEMU and is much slower than arm64.
 EOF
 }
@@ -205,8 +236,73 @@ fi
 
 mkdir -p "$BIN_DIR" "$GO_MOD_CACHE" "$GO_BUILD_CACHE"
 
-sync_source() {
+get_patch_key() {
+  if [[ "$IPATOOL_APPLY_OTA_PATCH" -eq 1 ]]; then
+    shasum -a 256 "$IPATOOL_OTA_PATCH" | awk '{print $1}'
+    return
+  fi
+  printf ''
+}
+
+apply_ota_compat_patch() {
+  [[ "$IPATOOL_APPLY_OTA_PATCH" -eq 1 ]] || return 0
+
+  if grep -q 'ota-compat' "${SRC_DIR}/cmd/download.go" 2>/dev/null; then
+    echo "OTA compat patch already applied"
+    return 0
+  fi
+
+  if [[ ! -f "$IPATOOL_OTA_PATCH" ]]; then
+    echo "OTA patch not found: ${IPATOOL_OTA_PATCH}" >&2
+    exit 1
+  fi
+
+  echo "Applying OTA compat patch …"
+  if ! git -C "$SRC_DIR" apply --check "$IPATOOL_OTA_PATCH" 2>/dev/null; then
+    echo "OTA patch does not apply cleanly to ipatool @ $(git -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)." >&2
+    echo "Update ${IPATOOL_OTA_PATCH} or bump the ipatool submodule commit." >&2
+    exit 1
+  fi
+  git -C "$SRC_DIR" apply "$IPATOOL_OTA_PATCH"
+}
+
+sync_submodule_source() {
+  local desired_patch_key marker_file="${CACHE_DIR}/ipatool-patch-key"
+  desired_patch_key="$(get_patch_key)"
+
+  SRC_DIR="${SUBMODULE_DIR}"
+
+  echo "Updating ipatool submodule …"
+  git -C "${SCRIPT_DIR}" submodule update --init ipatool
+
+  if ! git -C "$SRC_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "ipatool submodule failed to initialize. Run:" >&2
+    echo "  git submodule update --init ipatool" >&2
+    exit 1
+  fi
+
+  echo "Resetting submodule working tree …"
+  git -C "$SRC_DIR" reset --hard HEAD
+  git -C "$SRC_DIR" clean -fd
+
+  apply_ota_compat_patch
+  printf '%s' "$desired_patch_key" > "$marker_file"
+}
+
+sync_cached_source() {
   local cached_remote=""
+  local desired_patch_key marker_file="${CACHE_DIR}/ipatool-patch-key"
+  desired_patch_key="$(get_patch_key)"
+
+  SRC_DIR="${CACHE_DIR}/ipatool-src"
+
+  if [[ -d "${SRC_DIR}/.git" && -f "$marker_file" ]]; then
+    if [[ "$(cat "$marker_file")" != "$desired_patch_key" ]]; then
+      echo "OTA patch set changed, re-cloning …"
+      rm -rf "$SRC_DIR"
+    fi
+  fi
+
   if [[ -d "${SRC_DIR}/.git" ]]; then
     cached_remote="$(git -C "$SRC_DIR" remote get-url origin 2>/dev/null || true)"
     if [[ -n "$cached_remote" && "$cached_remote" != "$IPATOOL_REPO" ]]; then
@@ -230,6 +326,16 @@ sync_source() {
   fi
 
   git -C "$SRC_DIR" fetch --depth 1 origin 'refs/tags/v*' 2>/dev/null || true
+  apply_ota_compat_patch
+  printf '%s' "$desired_patch_key" > "$marker_file"
+}
+
+sync_source() {
+  if [[ "$IPATOOL_USE_SUBMODULE" -eq 1 ]]; then
+    sync_submodule_source
+    return
+  fi
+  sync_cached_source
 }
 
 sync_source
