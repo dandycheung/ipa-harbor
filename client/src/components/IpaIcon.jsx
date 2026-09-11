@@ -1,85 +1,18 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
-    Box, Stack, Typography, Skeleton, Divider, IconButton, Chip, Link,
-    Drawer, Button, DialogTitle, DialogContent, ModalClose, Sheet
+    Box, Stack, Typography, Divider, IconButton, Chip, Link,
 } from '@mui/joy';
 import MouseTooltip from './MouseTooltip';
-import { getAppIconUrl, deleteTask, downloadApp, isRateLimitError, getAppDownloadPackageUrlByFileName } from '../utils/api';
+import IpaAppIcon from './IpaAppIcon';
+import { downloadApp, isRateLimitError, getAppDownloadPackageUrlByFileName } from '../utils/api';
 import Swal from 'sweetalert2';
 import formatFileSize from '../utils/formatFileSize.js';
-import { Close as CloseIcon, Download as DownloadIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '../contexts/AppContext';
 
-function AppIcon({ appId, size = 128, disabled = false, country }) {
-    const [loaded, setLoaded] = useState(false);
-    const iconUrl = appId ? getAppIconUrl(appId, size, country) : null;
-
-    return (
-        <Box
-            sx={{
-                position: 'relative',
-                width: size,
-                height: size,
-                borderRadius: '22%',
-                overflow: 'hidden',
-                backgroundColor: 'background.level1',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                filter: disabled ? 'grayscale(100%)' : 'none',
-                opacity: disabled ? 0.5 : 1,
-            }}
-            boxShadow='md'
-        >
-            {!loaded && (
-                <Skeleton
-                    variant="rectangular"
-                    width="100%"
-                    height="100%"
-                    sx={{ borderRadius: '22%' }}
-                />
-            )}
-
-            {iconUrl && (
-                <img
-                    src={iconUrl}
-                    alt={`App Icon - ${appId}`}
-                    style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                        borderRadius: '22%',
-                        display: loaded ? 'block' : 'none',
-                    }}
-                    onLoad={() => setLoaded(true)}
-                    onError={() => setLoaded(true)}
-                />
-            )}
-
-            {!iconUrl && !loaded && (
-                <Box
-                    sx={{
-                        position: 'absolute',
-                        inset: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: size / 3,
-                        color: 'text.tertiary',
-                    }}
-                >
-                    .
-                </Box>
-            )}
-        </Box>
-    );
-}
-
-export default function IpaIcon({ item, size = 128, isDragging = false }) {
+export default function IpaIcon({ item, size = 128, isDragging = false, onOpenDetail }) {
     const { t } = useTranslation();
     const { user } = useApp();
-    const [drawerOpen, setDrawerOpen] = useState(false);
     const {
         id: appId,
         name,
@@ -157,46 +90,6 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
 
 
     const tooltipContent = getTooltipContent();
-    const handleDeleteTask = async (e) => {
-        e.stopPropagation();
-
-        setDrawerOpen(false);
-        const result = await Swal.fire({
-            title: t('ui.confirmDelete'), // 确认删除
-            text: `${t('ui.confirmDeleteTask')} ${name}`, // 确定要删除这个任务和对应的 ipa 文件吗？ ${name}
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonText: t('ui.delete'), // 删除
-            cancelButtonText: t('ui.cancel'), // 取消
-            confirmButtonColor: '#d33'
-        });
-
-        if (result.isConfirmed) {
-            try {
-                const response = name
-                    ? await deleteTask(null, name) // 按文件名删除
-                    : await deleteTask(taskId); // 按任务ID删除
-
-                if (response.success) {
-                    Swal.fire({
-                        icon: 'success',
-                        title: t('ui.taskDeleted'), // 任务已删除
-                        timer: 1500,
-                        showConfirmButton: false
-                    });
-                }
-            } catch (error) {
-                if (isRateLimitError(error)) return;
-                console.error('删除任务失败:', error);
-                Swal.fire({
-                    icon: 'error',
-                    title: t('ui.deleteFailed'), // 删除失败
-                    text: error.message,
-                    confirmButtonText: t('ui.confirm') // 确定
-                });
-            }
-        }
-    };
 
     const handleRetryDownload = async (e) => {
         e.stopPropagation();
@@ -273,7 +166,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
     const canLinkDownload = ['completed', 'downloaded'].includes(status) && downloadUrl;
 
     const renderAppIcon = (iconProps) => {
-        const icon = <AppIcon {...iconProps} />;
+        const icon = <IpaAppIcon {...iconProps} />;
 
         if (!canLinkDownload) {
             return icon;
@@ -478,7 +371,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
 
     const handleClick = () => {
         if (['completed', 'downloaded'].includes(status)) {
-            setDrawerOpen(true);
+            onOpenDetail?.(item);
         }
     };
 
@@ -499,160 +392,6 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
         </Stack>
     );
 
-    const detailDrawer = (
-        <Drawer
-            size="md"
-            anchor="right"
-            variant="plain"
-            open={drawerOpen}
-            onClose={() => setDrawerOpen(false)}
-            slotProps={{
-                backdrop: {
-                    sx: {
-                        backdropFilter: 'none', // 禁用模糊效果
-                    },
-                },
-                content: {
-                    sx: {
-                        bgcolor: 'transparent',
-                        p: { md: 3, sm: 0 },
-                        boxShadow: 'none',
-                        minWidth: 300,
-                    },
-                },
-            }}
-        >
-            <Sheet
-                sx={{
-                    borderRadius: 'md',
-                    p: 2,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 2,
-                    height: '100%',
-                    minWidth: 300,
-                    overflow: 'auto',
-                }}
-            >
-                <DialogTitle>{bundleDisplayName || name}</DialogTitle>
-                <ModalClose />
-                <Divider sx={{ mt: 'auto' }} />
-                <DialogContent sx={{ gap: 2 }}>
-                    <Stack spacing={2}>
-                        <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
-                            <AppIcon appId={finalAppId} size={120} country={user?.region} />
-                        </Box>
-
-                        <Stack spacing={1}>
-                            {bundleDisplayName && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.appName_label')}</Typography>
-                                    <Typography level="body-md">{bundleDisplayName}</Typography>
-                                </Box>
-                            )}
-                            {artistName && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.developer')}</Typography>
-                                    <Typography level="body-md">{artistName}</Typography>
-                                </Box>
-                            )}
-                            {bundleShortVersionString && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.appVersion')}</Typography>
-                                    <Typography level="body-md">{bundleShortVersionString}</Typography>
-                                </Box>
-                            )}
-                            {bundleVersion && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.buildVersion')}</Typography>
-                                    <Typography level="body-md">{bundleVersion}</Typography>
-                                </Box>
-                            )}
-                            {softwareVersionBundleId && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.bundleId')}</Typography>
-                                    <Typography level="body-md">{softwareVersionBundleId}</Typography>
-                                </Box>
-                            )}
-                            {displayAppId && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.appId')}</Typography>
-                                    <Typography level="body-md">{displayAppId}</Typography>
-                                </Box>
-                            )}
-                            {softwareVersionExternalIdentifier && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.versionId')}</Typography>
-                                    <Typography level="body-md">{softwareVersionExternalIdentifier}</Typography>
-                                </Box>
-                            )}
-                            {productType && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.productType')}</Typography>
-                                    <Typography level="body-md">{productType}</Typography>
-                                </Box>
-                            )}
-                            {fileSize && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.fileSize')}</Typography>
-                                    <Typography level="body-md">{formatFileSize(fileSize)}</Typography>
-                                </Box>
-                            )}
-                            {releaseDate && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.releaseDate')}</Typography>
-                                    <Typography level="body-md">{formatDate(releaseDate)}</Typography>
-                                </Box>
-                            )}
-                            {firstReleaseDate && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.firstReleaseDate')}</Typography>
-                                    <Typography level="body-md">{formatDate(firstReleaseDate)}</Typography>
-                                </Box>
-                            )}
-                            {createdAt && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.downloadTime')}</Typography>
-                                    <Typography level="body-md">{formatDate(createdAt)}</Typography>
-                                </Box>
-                            )}
-                            <Box>
-                                <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.fileName')}</Typography>
-                                <Typography level="body-md">{name}</Typography>
-                            </Box>
-                        </Stack>
-                    </Stack>
-                </DialogContent>
-
-                <Divider sx={{ mt: 'auto' }} />
-                <Stack
-                    direction="row"
-                    useFlexGap
-                    spacing={1}
-                    sx={{ justifyContent: 'space-between' }}
-                >
-                    <Button
-                        variant="outlined"
-                        color="danger"
-                        onClick={handleDeleteTask}
-                    >
-                        {t('ui.delete')}
-                    </Button>
-                    <Link href={getAppDownloadPackageUrlByFileName(name)}>
-                        <Button startDecorator={<DownloadIcon />}>
-                            {t('ui.download')}
-                        </Button>
-                    </Link>
-                </Stack>
-            </Sheet>
-        </Drawer>
-    );
-
-    return (
-        <>
-            {content}
-            {detailDrawer}
-        </>
-    );
+    return content;
 
 }

@@ -1,16 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
-    Modal,
-    ModalClose,
+    Box,
     Stack,
     Button,
-    Autocomplete,
-    AutocompleteOption,
-    ListItemContent,
-    Typography
+    Chip,
+    Typography,
 } from '@mui/joy';
-import ResponsiveModalDialog from './ResponsiveModalDialog';
+import Dialog from './Dialog';
 import { setUserRegion, isRateLimitError } from '../utils/api';
+import {
+    getRegionDisplayName,
+    resolveRegionScrollTarget,
+} from '../utils/regionDisplayName';
 import Swal from 'sweetalert2';
 import { useTranslation } from 'react-i18next';
 
@@ -786,14 +787,66 @@ export const REGION = [
 ]
 
 export default function RegionSelector({ open, onClose, currentRegion, storeRegion, regionSource }) {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
     const [selectedRegion, setSelectedRegion] = useState(null);
     const [loading, setLoading] = useState(false);
+    const regionChipRefs = useRef(new Map());
+
+    const getRegionLabel = useCallback(
+        (region) => getRegionDisplayName(region?.code, i18n.language, region?.name),
+        [i18n.language],
+    );
 
     const storeRegionOption = storeRegion
         ? REGION.find((c) => c.code === storeRegion) || null
         : null;
     const isManualOverride = regionSource === 'manual' && !!storeRegion;
+
+    const groupedRegions = useMemo(() => {
+        const order = [];
+        const map = new Map();
+
+        REGION.forEach((region) => {
+            if (!map.has(region.groupKey)) {
+                map.set(region.groupKey, []);
+                order.push(region.groupKey);
+            }
+            map.get(region.groupKey).push(region);
+        });
+
+        return order.map((groupKey) => ({
+            groupKey,
+            regions: map.get(groupKey),
+        }));
+    }, []);
+
+    const regionCodeSet = useMemo(() => new Set(REGION.map((region) => region.code)), []);
+
+    useEffect(() => {
+        if (!open) {
+            regionChipRefs.current.clear();
+            return undefined;
+        }
+
+        const targetCode = resolveRegionScrollTarget(currentRegion, storeRegion, regionCodeSet);
+        if (!targetCode) {
+            return undefined;
+        }
+
+        let frameId = 0;
+        const scrollToTarget = () => {
+            regionChipRefs.current.get(targetCode)?.scrollIntoView({
+                block: 'center',
+                behavior: 'smooth',
+            });
+        };
+
+        frameId = requestAnimationFrame(() => {
+            requestAnimationFrame(scrollToTarget);
+        });
+
+        return () => cancelAnimationFrame(frameId);
+    }, [open, currentRegion, storeRegion, regionCodeSet]);
 
     useEffect(() => {
         if (open) {
@@ -823,7 +876,7 @@ export default function RegionSelector({ open, onClose, currentRegion, storeRegi
             Swal.fire({
                 icon: 'success',
                 title: t('ui.regionUpdated'),
-                text: t('ui.regionSetTo', { name: selectedRegion.name }),
+                text: t('ui.regionSetTo', { name: getRegionLabel(selectedRegion) }),
                 timer: 2000,
                 showConfirmButton: false
             });
@@ -855,7 +908,7 @@ export default function RegionSelector({ open, onClose, currentRegion, storeRegi
                     icon: 'success',
                     title: t('ui.regionRestored'),
                     text: t('ui.regionRestoredTo', {
-                        name: storeRegionOption.name,
+                        name: getRegionLabel(storeRegionOption),
                         code: storeRegionOption.code.toUpperCase(),
                     }),
                     timer: 2000,
@@ -882,98 +935,145 @@ export default function RegionSelector({ open, onClose, currentRegion, storeRegi
     };
 
     return (
-        <Modal open={open} onClose={() => onClose(false)}>
-            <ResponsiveModalDialog
-                sx={{
-                    width: '100%',
-                    maxWidth: 'min(540px, calc(100vw - 32px))',
-                    minWidth: { sm: 400 },
-                    boxSizing: 'border-box',
-                }}
-            >
-                <ModalClose />
-                <Typography level="h4" sx={{ mb: 2 }}>
-                    {t('ui.specifyRegionTitle')}
-                </Typography>
-
-                <Stack spacing={2}>
-                    <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                        {t('ui.specifyRegionDescription')}
-                    </Typography>
-
-                    {storeRegionOption && (
-                        <Typography level="body-sm" sx={{ color: 'text.tertiary' }}>
-                            {t('ui.accountStoreRegion', { region: storeRegionOption.code.toUpperCase() })}
-                            {isManualOverride && (
-                                <> · {t('ui.manualRegionOverride')}</>
-                            )}
-                        </Typography>
-                    )}
-
-                    <Autocomplete
-                        placeholder={t('ui.searchCountryPlaceholder')}
-                        options={REGION}
-                        getOptionLabel={(option) => option.name}
-                        value={selectedRegion}
-                        onChange={(event, newValue) => setSelectedRegion(newValue)}
-                        groupBy={(option) => t(`ui.${option.groupKey}`)}
-                        filterOptions={(options, { inputValue }) => {
-                            const searchValue = inputValue.toLowerCase();
-                            return options.filter((option) => {
-                                return (
-                                    option.name.toLowerCase().includes(searchValue) ||
-                                    option.code.toLowerCase().includes(searchValue) ||
-                                    option.keyword.toLowerCase().includes(searchValue)
-                                );
-                            });
-                        }}
-                        renderOption={(props, option) => {
-                            const { key, ...otherProps } = props;
-                            return (
-                                <AutocompleteOption key={key} {...otherProps}>
-                                    <ListItemContent>
-                                        <Typography level="body-md">{option.name}</Typography>
-                                        <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
-                                            {option.code.toUpperCase()}
-                                        </Typography>
-                                    </ListItemContent>
-                                </AutocompleteOption>
-                            );
-                        }}
-                    />
-
-                    <Stack direction="column" spacing={1} justifyContent="flex-end">
-                        <Button
-                            onClick={handleSave}
-                            loading={loading}
-                        >
-                            {t('ui.save')}
-                        </Button>
-
-                        <Stack direction="row" spacing={1} justifyContent="flex-end">
-                            {storeRegionOption && (
-                                <Button
-                                    variant="outlined"
-                                    color="neutral"
-                                    onClick={handleRestore}
-                                    loading={loading}
-                                    sx={{ flex: 1 }}
-                                >
-                                    {t('ui.restore')}
-                                </Button>
-                            )}
+        <Dialog
+            isOpen={open}
+            onClose={() => onClose(false)}
+            title={t('ui.specifyRegionTitle')}
+            size="large"
+            zIndex={1310}
+            fillBody
+            actions={(
+                <Stack spacing={1} sx={{ width: '100%' }}>
+                    <Button onClick={handleSave} loading={loading}>
+                        {t('ui.save')}
+                        {selectedRegion?.code !== (currentRegion || storeRegion) && selectedRegion && ` ${selectedRegion.code.toUpperCase()}`}
+                    </Button>
+                    <Stack direction="row" spacing={1}>
+                        {storeRegionOption && (
                             <Button
                                 variant="outlined"
                                 color="neutral"
-                                onClick={() => onClose(false)}
-                                sx={{ flex: storeRegionOption ? 1 : undefined, ml: storeRegionOption ? 0 : 'auto' }}
+                                onClick={handleRestore}
+                                loading={loading}
+                                sx={{ flex: 1 }}
                             >
-                                {t('ui.cancel')}
+                                {t('ui.restore')}
                             </Button>
-                        </Stack>
+                        )}
+                        <Button
+                            variant="outlined"
+                            color="neutral"
+                            onClick={() => onClose(false)}
+                            sx={{ flex: storeRegionOption ? 1 : undefined, ml: storeRegionOption ? 0 : 'auto' }}
+                        >
+                            {t('ui.cancel')}
+                        </Button>
                     </Stack>
                 </Stack>
-            </ResponsiveModalDialog>
-        </Modal>
+            )}
+        >
+            <Stack spacing={2} sx={{ flex: 1, minHeight: 0, height: '100%' }}>
+                <Typography level="body-sm" sx={{ color: 'text.secondary', flexShrink: 0 }}>
+                    {t('ui.specifyRegionDescription')}
+                </Typography>
+
+                {storeRegionOption && (
+                    <Typography level="body-sm" sx={{ color: 'text.tertiary', flexShrink: 0 }}>
+                        {t('ui.accountStoreRegion', { region: storeRegionOption.code.toUpperCase() })}
+                        {isManualOverride && (
+                            <> · {t('ui.manualRegionOverride')}</>
+                        )}
+                    </Typography>
+                )}
+
+                <Box
+                    sx={{
+                        flex: 1,
+                        minHeight: 0,
+                        overflowY: 'auto',
+                        overflowX: 'hidden',
+                        scrollbarWidth: 'none',
+                        msOverflowStyle: 'none',
+                        overscrollBehavior: 'contain',
+                        '&::-webkit-scrollbar': {
+                            display: 'none',
+                        },
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        borderRadius: 'md',
+                        bgcolor: (theme) => theme.palette.neutral[100],
+                        px: 1.5,
+                        pb: 1.5,
+                    }}
+                >
+                    {groupedRegions.map(({ groupKey, regions }) => (
+                        <Box key={groupKey}>
+                            <Box
+                                sx={{
+                                    position: 'sticky',
+                                    top: 0,
+                                    zIndex: 10,
+                                    mx: -1.5,
+                                    px: 1.5,
+                                    py: 1.25,
+                                    borderBottom: '1px solid',
+                                    borderColor: 'divider',
+                                    bgcolor: (theme) => theme.palette.background.surface,
+                                    transform: 'translateZ(0)',
+                                }}
+                            >
+                                <Typography level="title-sm" sx={{ m: 0 }}>
+                                    {t(`ui.${groupKey}`)}
+                                </Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, py: 1.5 }}>
+                                {regions.map((region) => {
+                                    const selected = selectedRegion?.code === region.code;
+                                    return (
+                                        <Chip
+                                            key={region.code}
+                                            ref={(node) => {
+                                                if (node) {
+                                                    regionChipRefs.current.set(region.code, node);
+                                                } else {
+                                                    regionChipRefs.current.delete(region.code);
+                                                }
+                                            }}
+                                            variant={selected ? 'solid' : 'outlined'}
+                                            color={selected ? 'primary' : 'neutral'}
+                                            onClick={() => setSelectedRegion(region)}
+                                            sx={{ cursor: 'pointer' }}
+                                        >
+                                            <Box
+                                                component="span"
+                                                sx={{
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: 0.75,
+                                                }}
+                                            >
+                                                <Box component="span" sx={{ fontWeight: 600 }}>
+                                                    {region.code.toUpperCase()}
+                                                </Box>
+                                                <Box
+                                                    component="span"
+                                                    sx={{
+                                                        color: selected
+                                                            ? 'rgba(255, 255, 255, 0.72)'
+                                                            : 'text.tertiary',
+                                                    }}
+                                                >
+                                                    {getRegionLabel(region)}
+                                                </Box>
+                                            </Box>
+                                        </Chip>
+                                    );
+                                })}
+                            </Box>
+                        </Box>
+                    ))}
+                </Box>
+            </Stack>
+        </Dialog>
     );
 }

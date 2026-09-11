@@ -76,9 +76,17 @@ function disableSortingStrategy() {
     return null;
 }
 
+let nextCanvasItemId = 0;
+
+// dnd-kit 需要稳定的列表项 id；时间戳 + 计数器，非安全上下文无法使用 crypto 会导致白屏 
+function createCanvasItemId() {
+    nextCanvasItemId += 1;
+    return `${Date.now()}-${nextCanvasItemId}`;
+}
+
 function syncItemIds(idsRef, length) {
     while (idsRef.current.length < length) {
-        idsRef.current.push(crypto.randomUUID());
+        idsRef.current.push(createCanvasItemId());
     }
 
     if (idsRef.current.length > length) {
@@ -333,7 +341,12 @@ function DateFormatModal({ open, segment, onClose, onSave }) {
     );
 }
 
-export default function FilenameTemplateEditor({ value, onChange, previewContext = FILENAME_PREVIEW_SAMPLE }) {
+export default function FilenameTemplateEditor({
+    value,
+    onChange,
+    previewContext = FILENAME_PREVIEW_SAMPLE,
+    previewOnly = false,
+}) {
     const { t } = useTranslation();
     const [hint, setHint] = useState('');
     const [hoverZone, setHoverZone] = useState(null);
@@ -482,7 +495,7 @@ export default function FilenameTemplateEditor({ value, onChange, previewContext
         const next = cloneTemplate(segments);
         const insertAt = index < 0 ? next.length : Math.min(index, next.length);
         next.splice(insertAt, 0, segment);
-        itemIdsRef.current.splice(insertAt, 0, crypto.randomUUID());
+        itemIdsRef.current.splice(insertAt, 0, createCanvasItemId());
         updateSegments(next);
     }, [segments, updateSegments]);
 
@@ -647,12 +660,24 @@ export default function FilenameTemplateEditor({ value, onChange, previewContext
         return t('ui.filenameEditorHintCanvas');
     }, [hint, hoverZone, t]);
 
+    const previewBlock = (
+        <div className="preview">
+            <span className="previewLabel">{t('ui.filenamePreview')}</span>
+            <p className="previewValue">{previewName}</p>
+        </div>
+    );
+
+    if (previewOnly) {
+        return (
+            <div className="filename-editor">
+                {previewBlock}
+            </div>
+        );
+    }
+
     return (
         <div className="filename-editor">
-            <div className="preview">
-                <span className="previewLabel">{t('ui.filenamePreview')}</span>
-                <p className="previewValue">{previewName}</p>
-            </div>
+            {previewBlock}
 
             <DndContext
                 sensors={sensors}

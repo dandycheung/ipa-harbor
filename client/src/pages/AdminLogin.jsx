@@ -116,14 +116,17 @@ const AdminLogin = () => {
     }, []);
     return (
         <Box
+            className="full-min-height safe-area-bottom safe-area-x"
             sx={{
                 position: 'relative',
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
-                minHeight: '100vh',
-                p: 2,
+                pt: 2,
+                px: 2,
                 overflow: 'hidden',
+                '--safe-area-pad-bottom': '16px',
+                '--safe-area-pad-x': '16px',
             }}
         >
             {bgImage && (

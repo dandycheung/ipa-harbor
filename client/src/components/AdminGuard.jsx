@@ -18,7 +18,7 @@ const AdminGuard = ({ children, requireAuth = true, allowSetup = false }) => {
                     flexDirection: 'column',
                     justifyContent: 'center',
                     alignItems: 'center',
-                    height: '100vh',
+                    height: '100%',
                 }}
             >
                 <LinearProgress />

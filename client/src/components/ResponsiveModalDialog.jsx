@@ -1,19 +1,27 @@
 import { ModalDialog } from '@mui/joy';
-import useBelowSm from '../hooks/useBelowSm';
+import { useFullscreenDialog } from '../hooks/useJoyMedia';
 
-export default function ResponsiveModalDialog({ layout, sx, ...props }) {
-    const belowSm = useBelowSm();
+export default function ResponsiveModalDialog({ layout, sx, className, ...props }) {
+    const fullscreen = useFullscreenDialog();
+    const mergedClassName = [
+        'responsive-modal-dialog',
+        className,
+        fullscreen ? 'safe-area-bottom safe-area-x' : '',
+    ].filter(Boolean).join(' ');
 
     return (
         <ModalDialog
-            layout={belowSm ? 'fullscreen' : layout}
+            layout={fullscreen ? 'fullscreen' : layout}
+            className={mergedClassName || undefined}
             sx={[
                 sx,
-                belowSm && {
+                fullscreen && {
                     minWidth: 0,
                     width: '100%',
                     maxWidth: '100%',
                     boxSizing: 'border-box',
+                    '--safe-area-pad-bottom': '16px',
+                    '--safe-area-pad-x': '16px',
                 },
             ]}
             {...props}

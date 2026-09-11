@@ -27,7 +27,7 @@ import {
 } from '../styles/tableColumns';
 import { listPurchases, getAppDetails, getAppIconUrl, isRateLimitError } from '../utils/api';
 import Dialog from '../components/Dialog';
-import AppDetail from '../components/AppDetail';
+import AppDetail, { toAppDetailPreview } from '../components/AppDetail';
 
 const PAGE_SIZE = 50;
 
@@ -46,6 +46,7 @@ export default function Purchases() {
     const [appDetails, setAppDetails] = useState([]);
     const [currentDetailIndex, setCurrentDetailIndex] = useState(0);
     const [detailLoading, setDetailLoading] = useState(false);
+    const [detailPreview, setDetailPreview] = useState(null);
 
     const loadingRef = useRef(false);
 
@@ -104,6 +105,7 @@ export default function Purchases() {
     }, [fetchPage, hasMore, page]);
 
     const handleRowClick = async (clickedApp) => {
+        setDetailPreview(toAppDetailPreview(clickedApp));
         setDetailLoading(true);
         setShowDetailDialog(true);
 
@@ -148,14 +150,19 @@ export default function Purchases() {
         setShowDetailDialog(false);
         setAppDetails([]);
         setCurrentDetailIndex(0);
+        setDetailPreview(null);
     };
+
+    const detailApp = appDetails[currentDetailIndex] ?? detailPreview;
 
     if (!isAuthenticated) {
         return (
-            <Box sx={{ textAlign: 'center', py: 8 }}>
-                <Typography level="body-lg" sx={{ color: 'text.secondary' }}>
-                    {t('ui.needAppleIdLogin')}
-                </Typography>
+            <Box sx={{ flex: 1, py: 3 }}>
+                <Box sx={{ textAlign: 'center', py: 8 }}>
+                    <Typography level="body-lg" sx={{ color: 'text.secondary' }}>
+                        {t('ui.needAppleIdLogin')}
+                    </Typography>
+                </Box>
             </Box>
         );
     }
@@ -167,6 +174,7 @@ export default function Purchases() {
             flex: 1,
             minHeight: 0,
             overflow: 'hidden',
+            py: 3,
         }}>
             <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 3, flexShrink: 0 }}>
                 <Typography level="h2">
@@ -270,11 +278,12 @@ export default function Purchases() {
             <Dialog
                 isOpen={showDetailDialog}
                 onClose={handleCloseDetail}
-                title={`${appDetails[currentDetailIndex]?.trackId ? 'ID: ' + appDetails[currentDetailIndex].trackId : ''}${appDetails[currentDetailIndex]?.trackName ? ' - ' + appDetails[currentDetailIndex].trackName : ''}`}
+                title={`${detailApp?.trackId ? `ID: ${detailApp.trackId}` : ''}${detailApp?.trackName ? ` - ${detailApp.trackName}` : ''}`}
                 size="large"
             >
                 <AppDetail
-                    app={detailLoading ? null : appDetails[currentDetailIndex]}
+                    app={detailApp}
+                    loading={detailLoading}
                 />
             </Dialog>
         </Box>

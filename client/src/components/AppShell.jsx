@@ -8,7 +8,7 @@ import {
     Badge,
     IconButton,
 } from '@mui/joy';
-import { useNavigate, useLocation, useOutlet } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
     AddToHomeScreen as AddToHomeScreenIcon,
 } from '@mui/icons-material';
@@ -18,7 +18,9 @@ import LanguageSwitcher from './LanguageSwitcher';
 import MobileNavMenu from './MobileNavMenu';
 import MenuToggleIcon from './MenuToggleIcon';
 import PageTransition from './PageTransition';
+import StandaloneBottomNav from './StandaloneBottomNav';
 import { useApp } from '../contexts/AppContext';
+import { useJoyUp, useStandaloneDisplay } from '../hooks/useJoyMedia';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import { useTranslation } from 'react-i18next';
 
@@ -26,8 +28,9 @@ export default function AppShell() {
     const { t } = useTranslation();
     const navigate = useNavigate();
     const location = useLocation();
-    const outlet = useOutlet();
     const { taskList, isAuthenticated } = useApp();
+    const standalone = useStandaloneDisplay();
+    const aboveSm = useJoyUp('sm');
     const [menuOpen, setMenuOpen] = useState(false);
     const [menuMounted, setMenuMounted] = useState(false);
 
@@ -37,21 +40,10 @@ export default function AppShell() {
 
     // 屏幕展开到 sm 及以上时自动折叠菜单
     useEffect(() => {
-        const mediaQuery = window.matchMedia('(min-width: 600px)');
-
-        const handleChange = (event) => {
-            if (event.matches) {
-                setMenuOpen(false);
-            }
-        };
-
-        if (mediaQuery.matches) {
+        if (aboveSm) {
             setMenuOpen(false);
         }
-
-        mediaQuery.addEventListener('change', handleChange);
-        return () => mediaQuery.removeEventListener('change', handleChange);
-    }, []);
+    }, [aboveSm]);
 
     const handleNavigate = (path) => {
         navigate(path);
@@ -77,11 +69,15 @@ export default function AppShell() {
     const badgeInfo = getBadgeInfo();
 
     const navItems = [
-        { path: '/', label: t('ui.home') },
+        { path: '/', label: t('ui.search') },
         { path: '/purchases', label: t('ui.purchasedApps') },
         { path: '/dl', label: t('ui.downloadManager'), badge: badgeInfo },
         { path: '/settings', label: t('ui.settings') },
     ];
+
+    const visibleNavItems = isAuthenticated
+        ? navItems
+        : navItems.filter((item) => item.path !== '/purchases');
 
     const renderNavButton = (item) => {
         const isActive = location.pathname === item.path;
@@ -108,17 +104,22 @@ export default function AppShell() {
     };
 
     return (
-        <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {/* Header */}
             <Sheet
-                variant="outlined"
+                component="header"
+                className="safe-area-x app-shell-header"
                 sx={{
+                    flexShrink: 0,
                     position: 'relative',
-                    borderBottom: 1,
+                    border: 'none',
+                    borderBottom: '1px solid',
                     borderColor: 'divider',
-                    p: 2,
+                    borderRadius: 0,
+                    pb: 2,
                     bgcolor: 'background.surface',
                     zIndex: menuOpen || menuMounted ? 1301 : 2,
+                    '--safe-area-pad-x': '16px',
                 }}
             >
                 <Stack
@@ -145,7 +146,7 @@ export default function AppShell() {
 
                     {/* sm 及以上：横向导航 */}
                     <Stack direction="row" spacing={1} alignItems="center" sx={{ display: { xs: 'none', sm: 'flex' } }}>
-                        {(isAuthenticated ? navItems : navItems.filter((item) => item.path !== '/purchases')).map(renderNavButton)}
+                        {visibleNavItems.map(renderNavButton)}
 
                         {isAuthenticated ? (
                             <UserStatus />
@@ -215,82 +216,93 @@ export default function AppShell() {
             {/* 主要内容区域 */}
             <Box
                 component="main"
+                className="safe-area-x"
                 sx={{
                     flex: 1,
                     minHeight: 0,
                     overflow: 'hidden',
                     display: 'flex',
                     flexDirection: 'column',
-                    p: 3,
                     maxWidth: '1200px',
                     mx: 'auto',
                     width: '100%',
-                    pb: 8,
+                    '--safe-area-pad-x': '24px',
                 }}
             >
-                <PageTransition>{outlet}</PageTransition>
+                <PageTransition />
             </Box>
 
-            {/* Footer */}
+            {/* Footer：standalone 下为底部 Tab 导航 */}
             <Sheet
-                variant="outlined"
+                component="footer"
+                className={standalone ? undefined : 'safe-area-footer'}
                 sx={{
-                    position: 'fixed',
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    borderTop: 1,
+                    flexShrink: 0,
+                    border: 'none',
+                    borderTop: '1px solid',
                     borderColor: 'divider',
+                    borderRadius: 0,
                     bgcolor: 'background.surface',
-                    p: 1,
-                    zIndex: 1,
+                    ...(standalone && {
+                        pt: 0,
+                        pb: 0,
+                        px: 0,
+                    }),
                 }}
             >
-                <Stack
-                    direction="row"
-                    justifyContent="space-between"
-                    alignItems="center"
-                    sx={{ maxWidth: '1200px', mx: 'auto', width: '100%' }}
-                >
-                    {/* 左侧：管理员信息 */}
-                    <Stack direction="column" alignItems="flex-start" gap={0.2}>
-                        <Typography level="body-xs">IPA Harbor ©2025</Typography>
-                        <Stack
-                            direction="row"
-                            gap={0.2}
-                            sx={{
-                                cursor: 'pointer',
-                                ':hover': { opacity: 0.8 },
-                                transition: 'opacity 0.2s ease-in-out',
-                            }}
-                        >
-                            <Typography
-                                level="body-xs"
-                                sx={{ fontSize: '0.625rem', fontWeight: 'normal' }}
-                                onClick={() => window.open('https://github.com/ij369/ipa-harbor', '_blank')}
-                                startDecorator={<GitHubIcon sx={{ fontSize: '0.75rem' }} />}
-                            >
-                                {t('ui.footer')}
-                            </Typography>
-                            <Typography
-                                level="body-xs"
+                {standalone ? (
+                    <StandaloneBottomNav
+                        navItems={visibleNavItems}
+                        currentPath={location.pathname}
+                        onNavigate={handleNavigate}
+                    />
+                ) : (
+                    <Stack
+                        direction="row"
+                        justifyContent="space-between"
+                        alignItems="center"
+                        sx={{ maxWidth: '1200px', mx: 'auto', width: '100%' }}
+                    >
+                        {/* 左侧：开源信息 */}
+                        <Stack direction="column" alignItems="flex-start" gap={0.2}>
+                            <Typography level="body-xs">IPA Harbor ©2025</Typography>
+                            <Stack
+                                direction="row"
+                                gap={0.2}
                                 sx={{
-                                    fontSize: '0.625rem',
-                                    fontWeight: 'normal',
-                                    display: { xs: 'none', sm: 'none', md: 'block' },
+                                    cursor: 'pointer',
+                                    ':hover': { opacity: 0.8 },
+                                    transition: 'opacity 0.2s ease-in-out',
                                 }}
-                                onClick={() => window.open('https://github.com/ij369/ipa-harbor', '_blank')}
                             >
-                                {t('ui.footerSuffix')}
-                            </Typography>
+                                <Typography
+                                    level="body-xs"
+                                    sx={{ fontSize: '0.625rem', fontWeight: 'normal' }}
+                                    onClick={() => window.open('https://github.com/ij369/ipa-harbor', '_blank')}
+                                    startDecorator={<GitHubIcon sx={{ fontSize: '0.75rem' }} />}
+                                >
+                                    {t('ui.footer')}
+                                </Typography>
+                                <Typography
+                                    level="body-xs"
+                                    sx={{
+                                        fontSize: '0.625rem',
+                                        fontWeight: 'normal',
+                                        display: { xs: 'none', sm: 'none', md: 'block' },
+                                    }}
+                                    onClick={() => window.open('https://github.com/ij369/ipa-harbor', '_blank')}
+                                >
+                                    {t('ui.footerSuffix')}
+                                </Typography>
+                            </Stack>
+                        </Stack>
+
+                        {/* 右侧：操作按钮 */}
+                        <Stack direction="row" alignItems="center" gap={1} sx={{ display: { xs: 'none', md: 'flex' } }}>
+                            <AdminStatus />
                         </Stack>
                     </Stack>
-
-                    {/* 右侧：操作按钮 */}
-                    <Stack direction="row" alignItems="center" gap={1}>
-                        <AdminStatus />
-                    </Stack>
-                </Stack>
+                )}
             </Sheet>
         </Box>
     );

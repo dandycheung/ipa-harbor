@@ -1,8 +1,11 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import './Dialog.css';
 import { Close as CloseIcon } from '@mui/icons-material';
 import { IconButton } from '@mui/joy';
 import { useTranslation } from 'react-i18next';
+import { useFullscreenDialog } from '../hooks/useJoyMedia';
+
 export default function Dialog({
     isOpen,
     onClose,
@@ -14,9 +17,13 @@ export default function Dialog({
     onNext,
     hasPrevious,
     hasNext,
-    headerActions
+    headerActions,
+    zIndex,
+    fillBody = false,
 }) {
     const { t } = useTranslation();
+    const fullscreen = useFullscreenDialog();
+
     // 处理ESC键关闭
     useEffect(() => {
         const handleEscape = (e) => {
@@ -38,10 +45,17 @@ export default function Dialog({
 
     if (!isOpen) return null;
 
-    return (
-        <div className="dialog-overlay" onClick={onClose}>
-            <div className={`dialog-content dialog-${size}`} onClick={(e) => e.stopPropagation()}>
-                <div className="dialog-header">
+    return createPortal(
+        <div
+            className={`dialog-overlay${fullscreen ? ' dialog-fullscreen' : ''}`}
+            onClick={onClose}
+            style={zIndex != null ? { zIndex } : undefined}
+        >
+            <div
+                className={`dialog-content dialog-${size}${fullscreen ? ' dialog-fullscreen' : ''}`}
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="dialog-header safe-area-x">
                     <h2 className="dialog-title">{title}</h2>
                     <div className="dialog-header-actions">
                         {(onPrevious || onNext) && (
@@ -72,15 +86,16 @@ export default function Dialog({
                         </IconButton>
                     </div>
                 </div>
-                <div className="dialog-body">
+                <div className={`dialog-body safe-area-x${fillBody ? ' dialog-body-fill' : ''}`}>
                     {children}
                 </div>
                 {actions && (
-                    <div className="dialog-actions">
+                    <div className="dialog-actions safe-area-bottom safe-area-x">
                         {actions}
                     </div>
                 )}
             </div>
-        </div>
+        </div>,
+        document.body,
     );
 }

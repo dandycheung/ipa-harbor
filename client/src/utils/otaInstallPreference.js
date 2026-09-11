@@ -36,6 +36,13 @@ export function getDefaultOtaInstallEnabled() {
     return isAppleOtaCapableDevice();
 }
 
+/** 当前页面是否为 HTTPS 安全上下文（OTA 安装依赖此项） */
+export function isOtaSecureContext() {
+    return typeof window !== 'undefined'
+        && window.isSecureContext === true
+        && window.location.protocol === 'https:';
+}
+
 function parseStoredValue(raw) {
     return raw === '1' || raw === 'true';
 }

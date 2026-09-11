@@ -15,7 +15,7 @@ import { TableVirtuoso } from 'react-virtuoso';
 import { Search, Download, Public } from '@mui/icons-material';
 import { searchApps, getAppDetails, getAppIconUrl, isRateLimitError } from '../utils/api';
 import Dialog from '../components/Dialog';
-import AppDetail from '../components/AppDetail';
+import AppDetail, { toAppDetailPreview, toAppDetailPreviewFromId } from '../components/AppDetail';
 import RegionSelector from '../components/RegionSelector';
 import Swal from 'sweetalert2';
 import { useNavigate } from 'react-router-dom';
@@ -43,6 +43,7 @@ export default function Home() {
     const [appDetails, setAppDetails] = useState([]);
     const [currentDetailIndex, setCurrentDetailIndex] = useState(0);
     const [detailLoading, setDetailLoading] = useState(false);
+    const [detailPreview, setDetailPreview] = useState(null);
     const [regionDialogOpen, setRegionDialogOpen] = useState(false);
 
     /**
@@ -78,6 +79,7 @@ export default function Home() {
 
                 if (appId) {
                     // 直接打开详情页
+                    setDetailPreview(toAppDetailPreviewFromId(appId));
                     setDetailLoading(true);
                     setShowDetailDialog(true);
 
@@ -138,6 +140,7 @@ export default function Home() {
     const handleRowClick = async (clickedApp) => {
         if (!searchResults?.data?.apps) return;
 
+        setDetailPreview(toAppDetailPreview(clickedApp));
         setDetailLoading(true);
         setShowDetailDialog(true);
 
@@ -183,7 +186,10 @@ export default function Home() {
         setShowDetailDialog(false);
         setAppDetails([]);
         setCurrentDetailIndex(0);
+        setDetailPreview(null);
     };
+
+    const detailApp = appDetails[currentDetailIndex] ?? detailPreview;
 
 
     const searchAppsList = searchResults?.data?.apps || [];
@@ -204,6 +210,7 @@ export default function Home() {
             flex: 1,
             minHeight: 0,
             overflow: 'hidden',
+            py: 3,
         }}>
             <Typography level="h2" sx={{ mb: 3, flexShrink: 0 }}>
                 {/* 应用搜索 */}
@@ -364,9 +371,7 @@ export default function Home() {
             <Dialog
                 isOpen={showDetailDialog}
                 onClose={handleCloseDetail}
-                title={`
-                    ${appDetails[currentDetailIndex]?.trackId ? 'ID: ' + appDetails[currentDetailIndex].trackId : ''}${appDetails[currentDetailIndex]?.trackName ? ' - ' + appDetails[currentDetailIndex].trackName : ''}`}
-
+                title={`${detailApp?.trackId ? `ID: ${detailApp.trackId}` : ''}${detailApp?.trackName ? ` - ${detailApp.trackName}` : ''}`}
                 size="large"
                 onPrevious={handlePrevious}
                 onNext={handleNext}
@@ -374,7 +379,8 @@ export default function Home() {
                 hasNext={currentDetailIndex < appDetails.length - 1}
             >
                 <AppDetail
-                    app={detailLoading ? null : appDetails[currentDetailIndex]}
+                    app={detailApp}
+                    loading={detailLoading}
                 />
             </Dialog>
 

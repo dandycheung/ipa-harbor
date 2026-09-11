@@ -29,7 +29,10 @@ const initialState = {
         files: [],
         total: 0,
         totalSize: 0
-    }
+    },
+    taskListSynced: false,
+    fileListSynced: false,
+    downloadDataReady: false,
 };
 
 const ActionTypes = {
@@ -44,6 +47,7 @@ const ActionTypes = {
     SET_TASK_LIST: 'SET_TASK_LIST',
     SET_FILE_LIST: 'SET_FILE_LIST',
     SET_SETTINGS: 'SET_SETTINGS',
+    RESET_DOWNLOAD_DATA_SYNC: 'RESET_DOWNLOAD_DATA_SYNC',
 };
 
 function appReducer(state, action) {
@@ -89,12 +93,23 @@ function appReducer(state, action) {
         case ActionTypes.SET_TASK_LIST:
             return {
                 ...state,
-                taskList: action.payload
+                taskList: action.payload,
+                taskListSynced: true,
+                downloadDataReady: state.fileListSynced,
             };
         case ActionTypes.SET_FILE_LIST:
             return {
                 ...state,
-                fileList: action.payload
+                fileList: action.payload,
+                fileListSynced: true,
+                downloadDataReady: state.taskListSynced,
+            };
+        case ActionTypes.RESET_DOWNLOAD_DATA_SYNC:
+            return {
+                ...state,
+                taskListSynced: false,
+                fileListSynced: false,
+                downloadDataReady: false,
             };
         case ActionTypes.SET_SETTINGS:
             return {
@@ -239,6 +254,7 @@ export function AppProvider({ children }) {
             wsRef.current.onclose = () => {
                 console.log('WebSocket连接关闭');
                 dispatch({ type: ActionTypes.SET_WS_CONNECTED, payload: false });
+                dispatch({ type: ActionTypes.RESET_DOWNLOAD_DATA_SYNC });
                 stopPing();
 
                 // 只有在管理员仍然登录时才尝试重连
@@ -281,6 +297,7 @@ export function AppProvider({ children }) {
         stopPing();
         dispatch({ type: ActionTypes.SET_WS_CONNECTED, payload: false });
         dispatch({ type: ActionTypes.SET_WS_RECONNECTING, payload: false });
+        dispatch({ type: ActionTypes.RESET_DOWNLOAD_DATA_SYNC });
     };
 
     const startPing = () => {

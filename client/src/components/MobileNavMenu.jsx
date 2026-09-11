@@ -6,6 +6,7 @@ import {
     Typography,
     Button,
     Avatar,
+    Chip,
     Divider,
 } from '@mui/joy';
 import { AnimatePresence, motion } from 'motion/react';
@@ -17,7 +18,6 @@ import LanguageSwitcher from './LanguageSwitcher';
 import RegionSelector from './RegionSelector';
 import Swal from 'sweetalert2';
 
-const HEADER_HEIGHT = 64;
 const EASE_OUT = [0.22, 1, 0.36, 1];
 const EASE_IN = [0.4, 0, 1, 1];
 
@@ -159,6 +159,7 @@ export default function MobileNavMenu({
                         role="dialog"
                         aria-modal="true"
                         aria-label={t('ui.openMenu')}
+                        className="app-shell-nav-overlay"
                         initial="initial"
                         animate="animate"
                         exit="exit"
@@ -168,7 +169,6 @@ export default function MobileNavMenu({
                             zIndex: 1200,
                             display: 'flex',
                             flexDirection: 'column',
-                            pt: `${HEADER_HEIGHT}px`,
                         }}
                     >
                         {/* 背景遮罩 */}
@@ -211,13 +211,14 @@ export default function MobileNavMenu({
                                 initial="initial"
                                 animate="animate"
                                 exit="exit"
+                                className="safe-area-x"
                                 sx={{
                                     flex: 1,
                                     display: 'flex',
                                     flexDirection: 'column',
                                     justifyContent: 'center',
-                                    px: 4,
                                     py: 2,
+                                    '--safe-area-pad-x': '32px',
                                 }}
                             >
                                 {navItems.map((item) => {
@@ -287,11 +288,12 @@ export default function MobileNavMenu({
                                 initial="initial"
                                 animate="animate"
                                 exit="exit"
+                                className="safe-area-bottom safe-area-x"
                                 sx={{
                                     position: 'relative',
                                     zIndex: 1,
-                                    px: 3,
-                                    pb: 3,
+                                    '--safe-area-pad-bottom': '24px',
+                                    '--safe-area-pad-x': '24px',
                                 }}
                             >
                                 <Divider sx={{ mb: 2.5 }} />
@@ -306,9 +308,30 @@ export default function MobileNavMenu({
                                                 <Typography level="title-sm" noWrap>
                                                     {user.name || t('ui.unknownUser')}
                                                 </Typography>
-                                                <Typography level="body-xs" sx={{ color: 'text.tertiary' }} noWrap>
-                                                    {user.email || t('ui.unknownEmail')}
-                                                </Typography>
+                                                <Box
+                                                    sx={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 0.75,
+                                                        minWidth: 0,
+                                                    }}
+                                                >
+                                                    <Typography
+                                                        level="body-xs"
+                                                        sx={{
+                                                            color: 'text.tertiary',
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                            whiteSpace: 'nowrap',
+                                                            minWidth: 0,
+                                                        }}
+                                                    >
+                                                        {user.email || t('ui.unknownEmail')}
+                                                    </Typography>
+                                                    <Chip size="sm" variant="soft" color="neutral" sx={{ flexShrink: 0 }}>
+                                                        {t('ui.appleId')}
+                                                    </Chip>
+                                                </Box>
                                             </Box>
                                         </Stack>
 
@@ -337,7 +360,7 @@ export default function MobileNavMenu({
                                     </Stack>
                                 )}
 
-                                <LanguageSwitcher variant="buttons" fullWidth size="md" />
+                                <LanguageSwitcher variant="select" fullWidth size="md" />
                             </Box>
                         </Box>
                     </Box>

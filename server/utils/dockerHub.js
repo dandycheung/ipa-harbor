@@ -1,8 +1,13 @@
 const DOCKER_HUB_TAGS_URL = 'https://hub.docker.com/v2/repositories/uuphy/ipa-harbor/tags?page_size=100';
 
-/** 解析 x.y.z 语义化版本 */
+const RELEASE_TAG_PATTERN = /^v?(\d+)\.(\d+)\.(\d+)$/i;
+
+function isReleaseTag(version) {
+    return RELEASE_TAG_PATTERN.test(String(version).trim());
+}
+
 function parseSemver(version) {
-    const match = String(version).trim().replace(/^v/i, '').match(/^(\d+)\.(\d+)\.(\d+)/);
+    const match = String(version).trim().match(RELEASE_TAG_PATTERN);
     if (!match) {
         return null;
     }
@@ -49,7 +54,7 @@ async function fetchDockerHubTags() {
 function getLatestReleaseTag(tags) {
     const releaseTags = tags
         .map((item) => item?.name)
-        .filter((name) => name && name !== 'latest' && parseSemver(name));
+        .filter((name) => name && name !== 'latest' && isReleaseTag(name));
 
     releaseTags.sort((a, b) => compareSemver(b, a));
 
@@ -58,6 +63,7 @@ function getLatestReleaseTag(tags) {
 
 module.exports = {
     DOCKER_HUB_TAGS_URL,
+    isReleaseTag,
     parseSemver,
     compareSemver,
     fetchDockerHubTags,

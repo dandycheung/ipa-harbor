@@ -1,6 +1,6 @@
 import Swal from 'sweetalert2';
 import i18n from '../i18n';
-import { isOtaInstallEnabled } from './otaInstallPreference';
+import { isOtaInstallEnabled, isOtaSecureContext } from './otaInstallPreference';
 
 const API_BASE_URL =
     import.meta.env.MODE === 'production' ?
@@ -277,9 +277,7 @@ export async function clearAllTasks() {
  * 当前是否可用 OTA 安装（HTTPS + 本地开关）
  */
 export function canUseOtaInstall() {
-    return typeof window !== 'undefined'
-        && window.isSecureContext
-        && isOtaInstallEnabled();
+    return isOtaSecureContext() && isOtaInstallEnabled();
 }
 
 /**

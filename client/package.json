@@ -27,6 +27,7 @@
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-i18next": "^16.5.3",
+    "react-medium-image-zoom": "^5.4.9",
     "react-pin-field": "^4.0.2",
     "react-router-dom": "^7.9.4",
     "react-shadow-root": "^6.2.0",

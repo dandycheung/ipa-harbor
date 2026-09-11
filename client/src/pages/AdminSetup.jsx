@@ -90,14 +90,17 @@ const AdminSetup = () => {
     if (success) {
         return (
             <Box
+                className="full-height safe-area-bottom safe-area-x"
                 sx={{
                     display: 'flex',
                     justifyContent: 'center',
                     alignItems: 'center',
                     minHeight: '60vh',
-                    p: 2
+                    pt: 2,
+                    px: 2,
+                    '--safe-area-pad-bottom': '16px',
+                    '--safe-area-pad-x': '16px',
                 }}
-                className="full-height"
             >
                 <Card sx={{ width: '100%', maxWidth: 500 }}>
                     <CardContent sx={{ textAlign: 'center' }}>
@@ -123,10 +126,13 @@ const AdminSetup = () => {
             gap={1.8}
             alignItems="center"
             justifyContent="center"
+            className="full-height safe-area-bottom safe-area-x"
             sx={{
-                p: 2
+                pt: 2,
+                px: 2,
+                '--safe-area-pad-bottom': '16px',
+                '--safe-area-pad-x': '16px',
             }}
-            className="full-height"
         >
             <Card sx={{ width: '100%', maxWidth: 500 }}>
                 <CardContent>

@@ -333,291 +333,294 @@ const AppleIdLogin = () => {
     return (
         <Box
             sx={{
-                height: '100dvh',
+                height: '100%',
                 ...hideScrollbarSx,
             }}
         >
             <Stack
                 direction="column"
                 spacing={2}
+                className="safe-area-above-fixed-footer safe-area-x"
                 sx={{
                     minHeight: '100%',
-                    p: 2,
+                    py: 2,
                     pt: 6,
-                    pb: 10,
+                    '--fixed-footer-height': '80px',
+                    '--safe-area-pad-x': '16px',
                 }}
                 alignItems="center"
                 justifyContent="flex-start"
             >
-            {isAuthenticated ?
-                <Card sx={{ width: '100%', maxWidth: 400 }}>
-                    <CardContent>
-                        <h1>{t('ui.appleIdLoggedIn')}</h1>
-                        <Typography level="body-lg" sx={{ color: 'text.secondary' }}>{user.name}</Typography>
-                        <Typography level="body-md" sx={{ color: 'text.secondary' }}>{user.email}</Typography>
-                        <Divider sx={{ my: 2 }} />
-                        <Button variant="outlined" color="danger" size="lg" onClick={handleLogout}>
-                            {t('ui.revokeLogin')}
-                        </Button>
-                    </CardContent>
-                </Card>
-                :
-                <Card
-                    component={motion.div}
-                    initial={prefersReducedMotion ? false : { opacity: 0, y: 14 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: motionDuration, ease: EASE_OUT }}
-                    sx={{ width: '100%', maxWidth: 400, mt: 2 }}
-                >
-                    <CardContent>
-                        <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 3 }}>
-                            <IconButton
-                                size="sm"
-                                variant="outlined"
-                                onClick={handleBackToHome}
-                                sx={{ borderRadius: '50%' }}
-                            >
-                                <ArrowBack />
-                            </IconButton>
-                            <Typography level="h3" sx={{ flex: 1, textAlign: 'center' }}>
-                                {t('ui.appleIdLogin')}
-                            </Typography>
-                            <Box sx={{ width: 32 }} /> {/* 占位符保持居中 */}
-                        </Stack>
-
-                        <AnimatePresence initial={false}>
-                            {needsTwoFactor && (
-                                <Box
-                                    component={motion.div}
-                                    key="two-factor-alert"
-                                    variants={collapseVariants}
-                                    initial="initial"
-                                    animate="animate"
-                                    exit="exit"
-                                    sx={{ overflow: 'hidden', mb: 2 }}
+                {isAuthenticated ?
+                    <Card sx={{ width: '100%', maxWidth: 400 }}>
+                        <CardContent>
+                            <h1>{t('ui.appleIdLoggedIn')}</h1>
+                            <Typography level="body-lg" sx={{ color: 'text.secondary' }}>{user.name}</Typography>
+                            <Typography level="body-md" sx={{ color: 'text.secondary' }}>{user.email}</Typography>
+                            <Divider sx={{ my: 2 }} />
+                            <Button variant="outlined" color="danger" size="lg" onClick={handleLogout}>
+                                {t('ui.revokeLogin')}
+                            </Button>
+                        </CardContent>
+                    </Card>
+                    :
+                    <Card
+                        component={motion.div}
+                        initial={prefersReducedMotion ? false : { opacity: 0, y: 14 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: motionDuration, ease: EASE_OUT }}
+                        sx={{ width: '100%', maxWidth: 400, mt: 2 }}
+                    >
+                        <CardContent>
+                            <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 3 }}>
+                                <IconButton
+                                    size="sm"
+                                    variant="outlined"
+                                    onClick={handleBackToHome}
+                                    sx={{ borderRadius: '50%' }}
                                 >
-                                    <Alert color="primary" variant="soft">
-                                        {t('ui.twoFactorHint')}
-                                    </Alert>
-                                </Box>
-                            )}
-                        </AnimatePresence>
-
-                        <AnimatePresence initial={false}>
-                            {error && (
-                                <Box
-                                    component={motion.div}
-                                    key="login-error"
-                                    variants={collapseVariants}
-                                    initial="initial"
-                                    animate="animate"
-                                    exit="exit"
-                                    sx={{ overflow: 'hidden', mb: 2 }}
-                                >
-                                    <Alert color="danger">
-                                        {error}
-                                    </Alert>
-                                </Box>
-                            )}
-                        </AnimatePresence>
-
-                        <Box
-                            component={motion.form}
-                            onSubmit={handleSubmit}
-                            variants={formContainerVariants}
-                            initial="hidden"
-                            animate="show"
-                        >
-                            <Stack spacing={3}>
-                                <Box
-                                    component={motion.div}
-                                    variants={formItemVariants}
-                                    sx={{ textAlign: 'center', mb: 2 }}
-                                >
-                                    <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                                        {t('ui.loginWithAppleId')}
-                                    </Typography>
-                                </Box>
-
-                                <Box component={motion.div} variants={formItemVariants}>
-                                    <FormControl>
-                                        <FormLabel>{t('ui.appleId')}</FormLabel>
-                                        <Input
-                                            type="text"
-                                            value={formData.email}
-                                            onChange={(e) => handleInputChange('email', e.target.value)}
-                                            placeholder={t('ui.appleIdPlaceholder')}
-                                            autoComplete="username"
-                                            required
-                                            disabled={loading}
-                                        />
-                                    </FormControl>
-                                </Box>
-
-                                <Box component={motion.div} variants={formItemVariants}>
-                                    <FormControl>
-                                        <FormLabel>{t('ui.password')}</FormLabel>
-                                        <Input
-                                            type="password"
-                                            value={formData.password}
-                                            onChange={(e) => handleInputChange('password', e.target.value)}
-                                            placeholder={t('ui.passwordPlaceholder')}
-                                            autoComplete="current-password"
-                                            required
-                                            disabled={loading}
-                                        />
-                                    </FormControl>
-                                </Box>
-
-                                <Box component={motion.div} variants={formItemVariants} layout={!prefersReducedMotion}>
-                                    <AnimatePresence initial={false} mode="popLayout">
-                                        {!showTwoFactorInput && (
-                                            <Box
-                                                component={motion.div}
-                                                key="two-factor-link"
-                                                variants={collapseVariants}
-                                                initial="initial"
-                                                animate="animate"
-                                                exit="exit"
-                                                sx={{ overflow: 'hidden' }}
-                                            >
-                                                <Box sx={{ textAlign: 'center' }}>
-                                                    <Link
-                                                        component="button"
-                                                        type="button"
-                                                        level="body-sm"
-                                                        onClick={expandTwoFactorInput}
-                                                        sx={{ background: 'none', border: 'none', cursor: 'pointer' }}
-                                                    >
-                                                        {t('ui.haveTwoFactorCode')}
-                                                    </Link>
-                                                </Box>
-                                            </Box>
-                                        )}
-
-                                        {showTwoFactorInput && (
-                                            <Box
-                                                component={motion.div}
-                                                key="two-factor-input"
-                                                variants={twoFactorExpandVariants}
-                                                initial="initial"
-                                                animate="animate"
-                                                exit="exit"
-                                                onAnimationComplete={handleTwoFactorAnimationComplete}
-                                                sx={{ overflow: 'hidden' }}
-                                            >
-                                                <FormControl>
-                                                    <FormLabel>{t('ui.twoFactorCode')}</FormLabel>
-                                                    <Input
-                                                        type="text"
-                                                        value={formData.twoFactor}
-                                                        onChange={(e) => handleInputChange('twoFactor', e.target.value)}
-                                                        onFocus={handleTwoFactorFocus}
-                                                        placeholder={t('ui.twoFactorPlaceholder')}
-                                                        autoComplete="one-time-code"
-                                                        tabIndex={0}
-                                                        slotProps={{
-                                                            input: {
-                                                                ref: twoFactorInputRef,
-                                                                inputMode: 'numeric',
-                                                                maxLength: 6
-                                                            }
-                                                        }}
-                                                    />
-                                                    <Typography level="body-xs" sx={{ mt: 1, color: 'text.secondary' }}>
-                                                        {t('ui.twoFactorHint')}
-                                                    </Typography>
-                                                </FormControl>
-                                            </Box>
-                                        )}
-                                    </AnimatePresence>
-                                </Box>
-
-                                <Box component={motion.div} variants={formItemVariants} layout={!prefersReducedMotion}>
-                                    <Button
-                                        type="submit"
-                                        fullWidth
-                                        loading={loading}
-                                        disabled={loading}
-                                        size="lg"
-                                    >
-                                        {loading ? t('ui.loggingIn') : ((needsTwoFactor || formData.twoFactor) ? t('ui.verifyAndLogin') : t('ui.login'))}
-                                    </Button>
-                                </Box>
-                            </Stack>
-                        </Box>
-
-                        <Divider sx={{ my: 3 }} />
-                        <Typography level="body-xs" sx={{ textAlign: 'center', color: 'text.secondary' }}>
-                            {t('ui.loginRequiredHint')}
-                        </Typography>
-                    </CardContent>
-                </Card>}
-
-            {/* 常见问题折叠组件 */}
-            {!isAuthenticated && (
-                <Card sx={{ width: '100%', maxWidth: 400, mt: 2 }}>
-                    <CardContent>
-                        <Accordion expanded={faqExpanded} onChange={(event, isExpanded) => setFaqExpanded(isExpanded)}>
-                            <AccordionSummary
-                                expandIcon={<ExpandMore />}
-                                sx={{ px: 0 }}
-                            >
-                                <Typography level="title-md" color="text.secondary">
-                                    {t('ui.loginIssuesTitle')}
+                                    <ArrowBack />
+                                </IconButton>
+                                <Typography level="h3" sx={{ flex: 1, textAlign: 'center' }}>
+                                    {t('ui.appleIdLogin')}
                                 </Typography>
-                            </AccordionSummary>
+                                <Box sx={{ width: 32 }} /> {/* 占位符保持居中 */}
+                            </Stack>
+
+                            <AnimatePresence initial={false}>
+                                {needsTwoFactor && (
+                                    <Box
+                                        component={motion.div}
+                                        key="two-factor-alert"
+                                        variants={collapseVariants}
+                                        initial="initial"
+                                        animate="animate"
+                                        exit="exit"
+                                        sx={{ overflow: 'hidden', mb: 2 }}
+                                    >
+                                        <Alert color="primary" variant="soft">
+                                            {t('ui.twoFactorHint')}
+                                        </Alert>
+                                    </Box>
+                                )}
+                            </AnimatePresence>
+
+                            <AnimatePresence initial={false}>
+                                {error && (
+                                    <Box
+                                        component={motion.div}
+                                        key="login-error"
+                                        variants={collapseVariants}
+                                        initial="initial"
+                                        animate="animate"
+                                        exit="exit"
+                                        sx={{ overflow: 'hidden', mb: 2 }}
+                                    >
+                                        <Alert color="danger">
+                                            {error}
+                                        </Alert>
+                                    </Box>
+                                )}
+                            </AnimatePresence>
+
                             <Box
-                                sx={{
-                                    px: 0,
-                                    pt: faqExpanded ? 1 : 0,
-                                    maxHeight: faqExpanded ? '500px' : '0px',
-                                    overflow: 'hidden',
-                                    transition: 'max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), padding-top 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                                }}
+                                component={motion.form}
+                                onSubmit={handleSubmit}
+                                variants={formContainerVariants}
+                                initial="hidden"
+                                animate="show"
                             >
-                                <Box>
-                                    <Stack gap={1} sx={{ pl: 2, py: 1 }}>
-                                        <Stack direction="row" spacing={1}>
-                                            <Typography level="body-xs" sx={{ fontWeight: 'md' }}>1.</Typography>
-                                            <Typography level="body-xs">
-                                                {t('ui.loginIssue1')}
-                                            </Typography>
-                                        </Stack>
-                                        <Stack direction="row" spacing={1}>
-                                            <Typography level="body-xs" sx={{ fontWeight: 'md' }}>2.</Typography>
-                                            <Typography level="body-xs">
-                                                {t('ui.loginIssue2')}
-                                            </Typography>
-                                        </Stack>
-                                        <Stack direction="row" spacing={1}>
-                                            <Typography level="body-xs" sx={{ fontWeight: 'md' }}>3.</Typography>
-                                            <Typography level="body-xs">
-                                                {t('ui.loginIssue3')}
-                                            </Typography>
-                                        </Stack>
-                                        <Stack direction="row" spacing={1}>
-                                            <Typography level="body-xs" sx={{ fontWeight: 'md' }}>4.</Typography>
-                                            <Typography level="body-xs" component="span">
-                                                {t('ui.loginIssue4Part1')}&nbsp;
-                                                <Link href="https://github.com/ij369/ipa-harbor/blob/main/README.md#quick-start" target="_blank" rel="noopener noreferrer">
-                                                    {t('ui.githubReadme')}&nbsp;
-                                                </Link>
-                                                {t('ui.loginIssue4Part2')}
-                                            </Typography>
-                                        </Stack>
-                                    </Stack>
-                                </Box>
+                                <Stack spacing={3}>
+                                    <Box
+                                        component={motion.div}
+                                        variants={formItemVariants}
+                                        sx={{ textAlign: 'center', mb: 2 }}
+                                    >
+                                        <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
+                                            {t('ui.loginWithAppleId')}
+                                        </Typography>
+                                    </Box>
+
+                                    <Box component={motion.div} variants={formItemVariants}>
+                                        <FormControl>
+                                            <FormLabel>{t('ui.appleId')}</FormLabel>
+                                            <Input
+                                                type="text"
+                                                value={formData.email}
+                                                onChange={(e) => handleInputChange('email', e.target.value)}
+                                                placeholder={t('ui.appleIdPlaceholder')}
+                                                autoComplete="username"
+                                                required
+                                                disabled={loading}
+                                            />
+                                        </FormControl>
+                                    </Box>
+
+                                    <Box component={motion.div} variants={formItemVariants}>
+                                        <FormControl>
+                                            <FormLabel>{t('ui.password')}</FormLabel>
+                                            <Input
+                                                type="password"
+                                                value={formData.password}
+                                                onChange={(e) => handleInputChange('password', e.target.value)}
+                                                placeholder={t('ui.passwordPlaceholder')}
+                                                autoComplete="current-password"
+                                                required
+                                                disabled={loading}
+                                            />
+                                        </FormControl>
+                                    </Box>
+
+                                    <Box component={motion.div} variants={formItemVariants} layout={!prefersReducedMotion}>
+                                        <AnimatePresence initial={false} mode="popLayout">
+                                            {!showTwoFactorInput && (
+                                                <Box
+                                                    component={motion.div}
+                                                    key="two-factor-link"
+                                                    variants={collapseVariants}
+                                                    initial="initial"
+                                                    animate="animate"
+                                                    exit="exit"
+                                                    sx={{ overflow: 'hidden' }}
+                                                >
+                                                    <Box sx={{ textAlign: 'center' }}>
+                                                        <Link
+                                                            component="button"
+                                                            type="button"
+                                                            level="body-sm"
+                                                            onClick={expandTwoFactorInput}
+                                                            sx={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                                                        >
+                                                            {t('ui.haveTwoFactorCode')}
+                                                        </Link>
+                                                    </Box>
+                                                </Box>
+                                            )}
+
+                                            {showTwoFactorInput && (
+                                                <Box
+                                                    component={motion.div}
+                                                    key="two-factor-input"
+                                                    variants={twoFactorExpandVariants}
+                                                    initial="initial"
+                                                    animate="animate"
+                                                    exit="exit"
+                                                    onAnimationComplete={handleTwoFactorAnimationComplete}
+                                                    sx={{ overflow: 'hidden' }}
+                                                >
+                                                    <FormControl>
+                                                        <FormLabel>{t('ui.twoFactorCode')}</FormLabel>
+                                                        <Input
+                                                            type="text"
+                                                            value={formData.twoFactor}
+                                                            onChange={(e) => handleInputChange('twoFactor', e.target.value)}
+                                                            onFocus={handleTwoFactorFocus}
+                                                            placeholder={t('ui.twoFactorPlaceholder')}
+                                                            autoComplete="one-time-code"
+                                                            tabIndex={0}
+                                                            slotProps={{
+                                                                input: {
+                                                                    ref: twoFactorInputRef,
+                                                                    inputMode: 'numeric',
+                                                                    maxLength: 6
+                                                                }
+                                                            }}
+                                                        />
+                                                        <Typography level="body-xs" sx={{ mt: 1, color: 'text.secondary' }}>
+                                                            {t('ui.twoFactorHint')}
+                                                        </Typography>
+                                                    </FormControl>
+                                                </Box>
+                                            )}
+                                        </AnimatePresence>
+                                    </Box>
+
+                                    <Box component={motion.div} variants={formItemVariants} layout={!prefersReducedMotion}>
+                                        <Button
+                                            type="submit"
+                                            fullWidth
+                                            loading={loading}
+                                            disabled={loading}
+                                            size="lg"
+                                        >
+                                            {loading ? t('ui.loggingIn') : ((needsTwoFactor || formData.twoFactor) ? t('ui.verifyAndLogin') : t('ui.login'))}
+                                        </Button>
+                                    </Box>
+                                </Stack>
                             </Box>
-                        </Accordion>
-                    </CardContent>
-                </Card>
-            )}
+
+                            <Divider sx={{ my: 3 }} />
+                            <Typography level="body-xs" sx={{ textAlign: 'center', color: 'text.secondary' }}>
+                                {t('ui.loginRequiredHint')}
+                            </Typography>
+                        </CardContent>
+                    </Card>}
+
+                {/* 常见问题折叠组件 */}
+                {!isAuthenticated && (
+                    <Card sx={{ width: '100%', maxWidth: 400, mt: 2 }}>
+                        <CardContent>
+                            <Accordion expanded={faqExpanded} onChange={(event, isExpanded) => setFaqExpanded(isExpanded)}>
+                                <AccordionSummary
+                                    expandIcon={<ExpandMore />}
+                                    sx={{ px: 0 }}
+                                >
+                                    <Typography level="title-md" color="text.secondary">
+                                        {t('ui.loginIssuesTitle')}
+                                    </Typography>
+                                </AccordionSummary>
+                                <Box
+                                    sx={{
+                                        px: 0,
+                                        pt: faqExpanded ? 1 : 0,
+                                        maxHeight: faqExpanded ? '500px' : '0px',
+                                        overflow: 'hidden',
+                                        transition: 'max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), padding-top 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                                    }}
+                                >
+                                    <Box>
+                                        <Stack gap={1} sx={{ pl: 2, py: 1 }}>
+                                            <Stack direction="row" spacing={1}>
+                                                <Typography level="body-xs" sx={{ fontWeight: 'md' }}>1.</Typography>
+                                                <Typography level="body-xs">
+                                                    {t('ui.loginIssue1')}
+                                                </Typography>
+                                            </Stack>
+                                            <Stack direction="row" spacing={1}>
+                                                <Typography level="body-xs" sx={{ fontWeight: 'md' }}>2.</Typography>
+                                                <Typography level="body-xs">
+                                                    {t('ui.loginIssue2')}
+                                                </Typography>
+                                            </Stack>
+                                            <Stack direction="row" spacing={1}>
+                                                <Typography level="body-xs" sx={{ fontWeight: 'md' }}>3.</Typography>
+                                                <Typography level="body-xs">
+                                                    {t('ui.loginIssue3')}
+                                                </Typography>
+                                            </Stack>
+                                            <Stack direction="row" spacing={1}>
+                                                <Typography level="body-xs" sx={{ fontWeight: 'md' }}>4.</Typography>
+                                                <Typography level="body-xs" component="span">
+                                                    {t('ui.loginIssue4Part1')}&nbsp;
+                                                    <Link href="https://github.com/ij369/ipa-harbor/blob/main/README.md#quick-start" target="_blank" rel="noopener noreferrer">
+                                                        {t('ui.githubReadme')}&nbsp;
+                                                    </Link>
+                                                    {t('ui.loginIssue4Part2')}
+                                                </Typography>
+                                            </Stack>
+                                        </Stack>
+                                    </Box>
+                                </Box>
+                            </Accordion>
+                        </CardContent>
+                    </Card>
+                )}
 
             </Stack>
 
             <Sheet
                 variant="outlined"
+                className="safe-area-footer"
                 sx={{
                     position: 'fixed',
                     bottom: 0,
@@ -626,7 +629,6 @@ const AppleIdLogin = () => {
                     borderTop: 1,
                     borderColor: 'divider',
                     bgcolor: 'background.surface',
-                    p: 1,
                     zIndex: 1,
                 }}
             >

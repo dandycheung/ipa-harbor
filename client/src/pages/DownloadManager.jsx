@@ -1,8 +1,11 @@
-import React, { useMemo, useState, useEffect, lazy, Suspense, forwardRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback, lazy, Suspense, forwardRef } from 'react';
 import { Box, Typography, Chip, Stack, CircularProgress, Sheet, Badge, IconButton } from '@mui/joy';
 import { VirtuosoGrid } from 'react-virtuoso';
+import { useSearchParams } from 'react-router-dom';
+import Swal from 'sweetalert2';
 import { useApp } from '../contexts/AppContext';
 import IpaIcon from '../components/IpaIcon';
+import IpaDetailDrawer from '../components/IpaDetailDrawer';
 import {
     Check,
     Schedule,
@@ -15,6 +18,7 @@ import {
 import formatFileSize from '../utils/formatFileSize.js';
 import { useTranslation } from 'react-i18next';
 import { NewDownloadButton } from '../components/NewDownloadDialog';
+import { useJoyDown } from '../hooks/useJoyMedia';
 
 const NewDownloadDialog = lazy(() => import('../components/NewDownloadDialog'));
 
@@ -44,6 +48,22 @@ const GRID_LAYOUT = {
     default: buildGridLayout(128, false),
     compact: buildGridLayout(64, true),
 };
+
+const DETAIL_QUERY_KEY = 'detail';
+const DETAIL_OPEN_STATUSES = new Set(['completed', 'downloaded']);
+
+function findDetailItem(items, detailParam) {
+    if (!detailParam) {
+        return null;
+    }
+
+    try {
+        const fileName = decodeURIComponent(detailParam);
+        return items.find((item) => item.name === fileName) ?? null;
+    } catch {
+        return null;
+    }
+}
 
 // VirtuosoGrid 通过 style 传入滚动与绝对定位，必须用原生 div + style，不能放进 sx
 function createGridComponents({ cellWidth, cellHeight, gap, listPadding, compact }) {
@@ -93,25 +113,51 @@ function createGridComponents({ cellWidth, cellHeight, gap, listPadding, compact
 
 export default function DownloadManager() {
     const { t } = useTranslation();
-    const [isCompact, setIsCompact] = useState(() =>
-        typeof window !== 'undefined' ? window.matchMedia('(max-width: 599.95px)').matches : false
-    );
-
-    useEffect(() => {
-        const mediaQuery = window.matchMedia('(max-width: 599.95px)');
-        const handleChange = (event) => setIsCompact(event.matches);
-        mediaQuery.addEventListener('change', handleChange);
-        return () => mediaQuery.removeEventListener('change', handleChange);
-    }, []);
+    const isCompact = useJoyDown('sm');
 
     const gridLayout = isCompact ? GRID_LAYOUT.compact : GRID_LAYOUT.default;
     const gridComponents = useMemo(
         () => createGridComponents({ ...gridLayout, compact: isCompact }),
         [gridLayout.cellWidth, gridLayout.cellHeight, gridLayout.gap, gridLayout.listPadding, isCompact]
     );
-    const { taskList, fileList } = useApp();
+    const { taskList, fileList, downloadDataReady } = useApp();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const detailParam = searchParams.get(DETAIL_QUERY_KEY);
     const [selectedFilter, setSelectedFilter] = useState('all');
     const [newDownloadDialogOpen, setNewDownloadDialogOpen] = useState(false);
+    const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
+    const [selectedDetailItem, setSelectedDetailItem] = useState(null);
+    const detailRestoreAttemptedRef = useRef(null);
+
+    const clearDetailParam = useCallback(() => {
+        setSearchParams((prev) => {
+            if (!prev.has(DETAIL_QUERY_KEY)) {
+                return prev;
+            }
+            const next = new URLSearchParams(prev);
+            next.delete(DETAIL_QUERY_KEY);
+            return next;
+        }, { replace: true });
+    }, [setSearchParams]);
+
+    const closeDetailDrawer = useCallback(() => {
+        setDetailDrawerOpen(false);
+        clearDetailParam();
+    }, [clearDetailParam]);
+
+    const handleDetailExitComplete = useCallback(() => {
+        setSelectedDetailItem(null);
+    }, []);
+
+    const openDetailDrawer = useCallback((item) => {
+        setSelectedDetailItem(item);
+        setDetailDrawerOpen(true);
+        setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.set(DETAIL_QUERY_KEY, item.name);
+            return next;
+        }, { replace: false });
+    }, [setSearchParams]);
 
     const allItems = useMemo(() => {
         const items = [];
@@ -228,6 +274,41 @@ export default function DownloadManager() {
         return allItems.filter(item => item.status === selectedFilter);
     }, [allItems, selectedFilter]);
 
+    useEffect(() => {
+        if (!detailParam) {
+            detailRestoreAttemptedRef.current = null;
+            return;
+        }
+
+        if (!downloadDataReady) {
+            return;
+        }
+
+        if (detailRestoreAttemptedRef.current === detailParam) {
+            return;
+        }
+        detailRestoreAttemptedRef.current = detailParam;
+
+        const item = findDetailItem(allItems, detailParam);
+        if (item && DETAIL_OPEN_STATUSES.has(item.status)) {
+            if (selectedFilter !== 'all' && item.status !== selectedFilter) {
+                setSelectedFilter('all');
+            }
+            setSelectedDetailItem(item);
+            setDetailDrawerOpen(true);
+            return;
+        }
+
+        Swal.fire({
+            icon: 'error',
+            text: t('ui.recordNotFound'),
+            confirmButtonText: t('ui.confirm'),
+        });
+        setDetailDrawerOpen(false);
+        setSelectedDetailItem(null);
+        clearDetailParam();
+    }, [detailParam, downloadDataReady, allItems, selectedFilter, clearDetailParam, t]);
+
     const openNewDownload = (e) => {
         e?.stopPropagation?.();
         setNewDownloadDialogOpen(true);
@@ -295,6 +376,7 @@ export default function DownloadManager() {
             flex: 1,
             minHeight: 0,
             overflow: 'hidden',
+            py: 3,
         }}>
             <Stack
                 onClick={() => { setSelectedFilter('all'); }}
@@ -358,7 +440,11 @@ export default function DownloadManager() {
                             totalCount={filteredItems.length}
                             components={gridComponents}
                             itemContent={(index) => (
-                                <IpaIcon item={filteredItems[index]} size={gridLayout.iconSize} />
+                                <IpaIcon
+                                    item={filteredItems[index]}
+                                    size={gridLayout.iconSize}
+                                    onOpenDetail={openDetailDrawer}
+                                />
                             )}
                         />
                     </Box>
@@ -385,6 +471,13 @@ export default function DownloadManager() {
                     </Typography>
                 </Box>
             )}
+
+            <IpaDetailDrawer
+                item={selectedDetailItem}
+                open={detailDrawerOpen}
+                onClose={closeDetailDrawer}
+                onExitComplete={handleDetailExitComplete}
+            />
 
             {fileList.totalSize > 0 && (
                 <Box sx={{

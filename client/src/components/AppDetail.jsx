@@ -17,6 +17,7 @@ import {
     ListItemContent,
     ListItemDecorator,
     CircularProgress,
+    Skeleton,
     IconButton,
     Link,
     Tooltip
@@ -25,13 +26,16 @@ import { Star, Download, Category, Person, History, AccountBalanceWallet, Delete
 import FindReplaceIcon from '@mui/icons-material/FindReplace';
 import { tabClasses } from '@mui/joy/Tab';
 import { getAppVersions, refreshAppVersionMetadata, purchaseApp, downloadApp, deleteTask, getAppInstallPackageUrlByFileName, getAppDownloadPackageUrlByFileName, isRateLimitError } from '../utils/api';
-import { useOtaInstallPreference } from '../utils/otaInstallPreference';
+import { isOtaSecureContext, useOtaInstallPreference } from '../utils/otaInstallPreference';
+import { useLoadAppScreenshotsPreference } from '../utils/appScreenshotsPreference';
 import { useApp } from '../contexts/AppContext';
 import Swal from 'sweetalert2';
 import { getAppIconUrl } from '../utils/api';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Virtuoso } from 'react-virtuoso';
+import AppScreenshots from './AppScreenshots';
+import { getAppScreenshotGroups } from '../utils/appScreenshotUrls';
 
 const VersionVirtuosoList = React.forwardRef(function VersionVirtuosoList({ style, children, ...props }, ref) {
     return (
@@ -51,7 +55,30 @@ const versionListVirtuosoConfig = {
     skipAnimationFrameInResizeObserver: true,
 };
 
-export default function AppDetail({ app }) {
+/** 列表行 / 搜索结果 → 详情加载前的预览数据 */
+export function toAppDetailPreview(listApp) {
+    if (!listApp) {
+        return null;
+    }
+
+    return {
+        trackId: listApp.id,
+        trackName: listApp.name,
+        bundleId: listApp.bundleID || listApp.bundleId,
+        version: listApp.version,
+        ...(listApp.price != null ? { price: listApp.price } : {}),
+    };
+}
+
+export function toAppDetailPreviewFromId(appId) {
+    if (appId == null || appId === '') {
+        return null;
+    }
+
+    return { trackId: appId };
+}
+
+export default function AppDetail({ app, loading = false }) {
     const { t } = useTranslation();
     const navigate = useNavigate();
     const [versions, setVersions] = useState([]);
@@ -67,10 +94,11 @@ export default function AppDetail({ app }) {
 
     const { taskList, user, fileList, settings } = useApp();
     const [otaInstallEnabled] = useOtaInstallPreference();
+    const [loadAppScreenshotsEnabled] = useLoadAppScreenshotsPreference();
     const showVersionMetadataRefresh = settings.showVersionMetadataRefresh === true;
-    const showOtaInstall = otaInstallEnabled
-        && typeof window !== 'undefined'
-        && window.isSecureContext;
+    const [showScreenshotsOnce, setShowScreenshotsOnce] = useState(false);
+    const showOtaInstall = otaInstallEnabled && isOtaSecureContext();
+    const { phone: phoneScreenshotGroup, ipad: ipadScreenshotGroup } = getAppScreenshotGroups(app);
 
     useLayoutEffect(() => {
         const parent = rootRef.current?.closest('.dialog-body');
@@ -88,6 +116,7 @@ export default function AppDetail({ app }) {
         setVersionsError(null);
         setDataSource(null);
         setStoreLatestVersionId(null);
+        setShowScreenshotsOnce(false);
     }, [app?.trackId]);
 
     useEffect(() => {
@@ -176,26 +205,6 @@ export default function AppDetail({ app }) {
             }
         }
     };
-
-    if (!app) {
-        return (
-            <Box sx={{ textAlign: 'center', py: 4 }}>
-                <CircularProgress sx={{ mb: 2 }} />
-                <Typography level="body-lg" sx={{ color: 'text.secondary', mb: 2 }}>
-                    {t('ui.loading')}
-                </Typography>
-                {user?.region ? (
-                    <Typography level="body-sm" sx={{ color: 'text.tertiary' }}>
-                        {t('ui.currentRegionDisplay', { region: user.region.toUpperCase() })}
-                    </Typography>
-                ) : (
-                    <Typography level="body-sm" sx={{ color: 'text.tertiary' }}>
-                        {t('ui.noRegionHint')}
-                    </Typography>
-                )}
-            </Box>
-        );
-    }
 
     // 格式化价格
     const formatPrice = (price) => {
@@ -1059,95 +1068,120 @@ export default function AppDetail({ app }) {
                 }}
             >
                 <ListItemDecorator>
-                        {version.isLatest ? <LabelImportantOutline style={{ color: 'green' }} /> : <History />}
-                    </ListItemDecorator>
-                    <ListItemContent sx={{ flex: 1, minWidth: 0 }}>
-                        <Stack
-                            direction="row"
-                            alignItems="flex-end"
-                            gap={0.5}
-                            sx={{
-                                alignSelf: 'flex-start',
-                                '& .version-metadata-refresh': {
-                                    opacity: 0,
-                                    transition: 'opacity 0.15s ease-in-out',
-                                    '@media (hover: none), (pointer: coarse)': {
-                                        opacity: 1,
-                                    },
-                                },
-                                '&:hover .version-metadata-refresh, & .version-metadata-refresh:focus-visible': {
-                                    opacity: 1,
-                                },
-                                '& .version-metadata-refresh[data-loading="true"]': {
-                                    opacity: 1,
-                                },
-                            }}
-                        >
-                            <Stack gap={0.25}>
-                                <Typography level="title-sm" color={version.isLatest ? 'success' : 'neutral'}>
-                                    {displayName}
-                                </Typography>
-                                <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                                    {releaseDate ? formatDate(releaseDate) : t('ui.releaseDateUnknown')}
-                                </Typography>
-                            </Stack>
-                            {showVersionMetadataRefresh && !releaseDate && (
-                                <Tooltip title={t('ui.refreshVersionMetadata')} variant="outlined" placement="right">
-                                    <IconButton
-                                        className="version-metadata-refresh"
-                                        variant="plain"
-                                        color="neutral"
-                                        size="sm"
-                                        data-loading={refreshingVersionMetadata.has(version.versionId) || undefined}
-                                        loading={refreshingVersionMetadata.has(version.versionId)}
-                                        onClick={() => handleRefreshVersionMetadata(version.versionId)}
-                                        aria-label={t('ui.refreshVersionMetadata')}
-                                    >
-                                        <FindReplaceIcon />
-                                    </IconButton>
-                                </Tooltip>
-                            )}
-                        </Stack>
-                        <Typography level="body-xs" sx={{ color: 'text.tertiary', fontFamily: 'monospace', mt: 0.25 }}>
-                            {t('ui.versionId')}: {version.versionId}
-                        </Typography>
-                    </ListItemContent>
-                    <Box
+                    {version.isLatest ? <LabelImportantOutline style={{ color: 'green' }} /> : <History />}
+                </ListItemDecorator>
+                <ListItemContent sx={{ flex: 1, minWidth: 0 }}>
+                    <Stack
+                        direction="row"
+                        alignItems="flex-end"
+                        gap={0.5}
                         sx={{
-                            flexBasis: { xs: '100%', sm: 'auto' },
-                            display: 'flex',
-                            justifyContent: 'flex-end',
-                            pl: { xs: 2, sm: 0 },
+                            alignSelf: 'flex-start',
+                            '& .version-metadata-refresh': {
+                                opacity: 0,
+                                transition: 'opacity 0.15s ease-in-out',
+                                '@media (hover: none), (pointer: coarse)': {
+                                    opacity: 1,
+                                },
+                            },
+                            '&:hover .version-metadata-refresh, & .version-metadata-refresh:focus-visible': {
+                                opacity: 1,
+                            },
+                            '& .version-metadata-refresh[data-loading="true"]': {
+                                opacity: 1,
+                            },
                         }}
                     >
-                        {versionActions}
-                    </Box>
+                        <Stack gap={0.25}>
+                            <Typography level="title-sm" color={version.isLatest ? 'success' : 'neutral'}>
+                                {displayName}
+                            </Typography>
+                            <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
+                                {releaseDate ? formatDate(releaseDate) : t('ui.releaseDateUnknown')}
+                            </Typography>
+                        </Stack>
+                        {showVersionMetadataRefresh && !releaseDate && (
+                            <Tooltip title={t('ui.refreshVersionMetadata')} variant="outlined" placement="right">
+                                <IconButton
+                                    className="version-metadata-refresh"
+                                    variant="plain"
+                                    color="neutral"
+                                    size="sm"
+                                    data-loading={refreshingVersionMetadata.has(version.versionId) || undefined}
+                                    loading={refreshingVersionMetadata.has(version.versionId)}
+                                    onClick={() => handleRefreshVersionMetadata(version.versionId)}
+                                    aria-label={t('ui.refreshVersionMetadata')}
+                                >
+                                    <FindReplaceIcon />
+                                </IconButton>
+                            </Tooltip>
+                        )}
+                    </Stack>
+                    <Typography level="body-xs" sx={{ color: 'text.tertiary', fontFamily: 'monospace', mt: 0.25 }}>
+                        {t('ui.versionId')}: {version.versionId}
+                    </Typography>
+                </ListItemContent>
+                <Box
+                    sx={{
+                        flexBasis: { xs: '100%', sm: 'auto' },
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                        pl: { xs: 2, sm: 0 },
+                    }}
+                >
+                    {versionActions}
+                </Box>
             </ListItem>
         );
     };
 
-    return (
-        <Box ref={rootRef}>
+    if (!app) {
+        return null;
+    }
 
-            {/* 应用基本信息 */}
-            <Stack direction="row" gap={3} sx={{ mb: 3 }}>
-                <Avatar
-                    src={getAppIconUrl(app.trackId, 512, user?.region)}
-                    alt={app.trackName}
-                    sx={{ width: 128, height: 128, borderRadius: '22%', boxShadow: 'sm' }}
-                />
+    const displayName = app.trackName || (app.trackId != null ? `ID: ${app.trackId}` : t('ui.loading'));
 
-                <Stack gap={1} sx={{ flex: 1 }}>
-                    <Typography level="h3">{app.trackName}</Typography>
-                    <Stack direction="row" gap={1} alignItems="center">
-                        <Person fontSize="small" />
-                        <Typography level="body-md">{app.artistName}</Typography>
-                    </Stack>
-                    <Stack direction="row" gap={1} alignItems="center">
-                        <Category fontSize="small" />
-                        <Typography level="body-sm">{app.primaryGenreName}</Typography>
-                    </Stack>
-                    <Stack direction="row" gap={2} alignItems="center">
+    const renderAppHeader = (isLoading = false) => (
+        <Stack direction="row" gap={3} sx={{ mb: 3 }}>
+            <Avatar
+                src={getAppIconUrl(app.trackId, 512, user?.region)}
+                alt={displayName}
+                sx={{ width: 128, height: 128, borderRadius: '22%', boxShadow: 'sm' }}
+            />
+
+            <Stack gap={1} sx={{ flex: 1, minWidth: 0 }}>
+                <Typography level="h3">{displayName}</Typography>
+                {isLoading ? (
+                    <>
+                        <Stack direction="row" gap={1} alignItems="center">
+                            <Person fontSize="small" sx={{ color: 'text.tertiary', flexShrink: 0 }} />
+                            {/* 发布者：约 12 字宽，上限 65% 内容区，避免满宽条 */}
+                            <Skeleton variant="text" level="body-md" sx={{ width: 'min(12ch, 65%)' }} />
+                        </Stack>
+                        <Stack direction="row" gap={1} alignItems="center">
+                            <Category fontSize="small" sx={{ color: 'text.tertiary', flexShrink: 0 }} />
+                            {/* 分类：更短，约 7 字宽 */}
+                            <Skeleton variant="text" level="body-sm" sx={{ width: 'min(7ch, 42%)' }} />
+                        </Stack>
+                    </>
+                ) : (
+                    <>
+                        {app.artistName ? (
+                            <Stack direction="row" gap={1} alignItems="center">
+                                <Person fontSize="small" />
+                                <Typography level="body-md">{app.artistName}</Typography>
+                            </Stack>
+                        ) : null}
+                        {app.primaryGenreName ? (
+                            <Stack direction="row" gap={1} alignItems="center">
+                                <Category fontSize="small" />
+                                <Typography level="body-sm">{app.primaryGenreName}</Typography>
+                            </Stack>
+                        ) : null}
+                    </>
+                )}
+                <Stack direction="row" gap={2} alignItems="center" flexWrap="wrap">
+                    {app.price != null && (
                         <Chip
                             size="sm"
                             color={app.price === 0 ? 'success' : 'primary'}
@@ -1156,18 +1190,132 @@ export default function AppDetail({ app }) {
                         >
                             {formatPrice(app.price)}
                         </Chip>
-                        {app.averageUserRating && (
-                            <Stack direction="row" gap={0.5} alignItems="center">
-                                <Star fontSize="small" sx={{ color: 'warning.400' }} />
-                                <Typography level="body-sm">
-                                    {app.averageUserRating.toFixed(1)} ({app.userRatingCount || 0})
-                                </Typography>
-                            </Stack>
-                        )}
-
-                    </Stack>
+                    )}
+                    {!isLoading && app.averageUserRating ? (
+                        <Stack direction="row" gap={0.5} alignItems="center">
+                            <Star fontSize="small" sx={{ color: 'warning.400' }} />
+                            <Typography level="body-sm">
+                                {app.averageUserRating.toFixed(1)} ({app.userRatingCount || 0})
+                            </Typography>
+                        </Stack>
+                    ) : null}
                 </Stack>
             </Stack>
+        </Stack>
+    );
+
+    const renderTextSkeleton = (text, level) => (
+        <Box sx={{ position: 'relative', width: 'fit-content' }}>
+            <Typography level={level} sx={{ visibility: 'hidden' }} aria-hidden="true">
+                {text}
+            </Typography>
+            <Skeleton variant="text" level={level} sx={{ position: 'absolute', inset: 0, width: '100%' }} />
+        </Box>
+    );
+
+    const renderLabelValueRowSkeleton = (label) => (
+        <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2}>
+            {renderTextSkeleton(label, 'body-sm')}
+            <Skeleton variant="text" level="body-sm" sx={{ width: 'min(6ch, 28%)', flexShrink: 0 }} />
+        </Stack>
+    );
+
+    const renderParagraphSkeleton = (lineWidths) => (
+        <Stack gap={0.75}>
+            {lineWidths.map((width, index) => (
+                <Skeleton key={index} variant="text" level="body-sm" sx={{ width }} />
+            ))}
+        </Stack>
+    );
+
+    const renderProseSheetSkeleton = (title, lineWidths) => (
+        <Sheet variant="outlined" sx={{ p: 2, borderRadius: 'md' }}>
+            <Box sx={{ mb: 1 }}>
+                {renderTextSkeleton(title, 'title-sm')}
+            </Box>
+            {renderParagraphSkeleton(lineWidths)}
+        </Sheet>
+    );
+
+    const renderLoadingBody = () => (
+        <Box sx={{ minHeight: 620 }}>
+            {/* 与加载完成后的布局同高，减少 Dialog 高度跳动 */}
+            <Skeleton variant="rectangular" height={36} sx={{ borderRadius: 'sm', width: '100%' }} />
+            <Divider sx={{ my: 2 }} />
+            <Skeleton variant="rectangular" height={40} sx={{ borderRadius: 'xl', width: '100%' }} />
+            <Box sx={{ position: 'relative', pt: 1.5, minHeight: 480 }}>
+                <Stack gap={2}>
+                    <Sheet variant="outlined" sx={{ p: 2, borderRadius: 'md' }}>
+                        <Box sx={{ mb: 1 }}>
+                            {renderTextSkeleton(t('ui.versionInfo'), 'title-sm')}
+                        </Box>
+                        <Stack gap={1}>
+                            {renderLabelValueRowSkeleton(`${t('ui.currentVersion')}:`)}
+                            {renderLabelValueRowSkeleton(`${t('ui.fileSize')}:`)}
+                            {renderLabelValueRowSkeleton(`${t('ui.updateTime')}:`)}
+                            {renderLabelValueRowSkeleton(`${t('ui.ageRating')}:`)}
+                        </Stack>
+                    </Sheet>
+                    <Sheet variant="outlined" sx={{ p: 2, borderRadius: 'md' }}>
+                        <Box sx={{ mb: 1 }}>
+                            {renderTextSkeleton(t('ui.supportInfo'), 'title-sm')}
+                        </Box>
+                        <Stack gap={1}>
+                            {renderLabelValueRowSkeleton(`${t('ui.languages')}:`)}
+                            {renderLabelValueRowSkeleton(`${t('ui.compatibility')}:`)}
+                            {renderLabelValueRowSkeleton(`${t('ui.bundleId')}:`)}
+                        </Stack>
+                    </Sheet>
+                    {renderProseSheetSkeleton(t('ui.appDescription'), ['100%', '100%', '96%', '72%'])}
+                    {renderProseSheetSkeleton(t('ui.releaseNotes'), ['100%', '88%', '64%'])}
+                </Stack>
+                <Box
+                    sx={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        zIndex: 1,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'flex-start',
+                        pt: 3,
+                        bgcolor: 'rgba(var(--joy-palette-background-surfaceChannel, 255 255 255) / 0.72)',
+                        pointerEvents: 'none',
+                    }}
+                >
+                    <CircularProgress sx={{ mb: 2 }} />
+                    <Typography level="body-lg" sx={{ color: 'text.secondary', mb: 2 }}>
+                        {t('ui.loading')}
+                    </Typography>
+                    {user?.region ? (
+                        <Typography level="body-sm" sx={{ color: 'text.tertiary' }}>
+                            {t('ui.currentRegionDisplay', { region: user.region.toUpperCase() })}
+                        </Typography>
+                    ) : (
+                        <Typography level="body-sm" sx={{ color: 'text.tertiary' }}>
+                            {t('ui.noRegionHint')}
+                        </Typography>
+                    )}
+                </Box>
+            </Box>
+        </Box>
+    );
+
+    if (loading) {
+        return (
+            <Box ref={rootRef}>
+                {renderAppHeader(true)}
+                {renderLoadingBody()}
+            </Box>
+        );
+    }
+
+    return (
+        <Box ref={rootRef}>
+            {renderAppHeader(false)}
 
             <Stack
                 gap={1}
@@ -1210,9 +1358,9 @@ export default function AppDetail({ app }) {
                     <Tab disableIndicator sx={{ flex: 1 }}>{t('ui.historicalVersions')}</Tab>
                 </TabList>
 
-                <TabPanel value={0} sx={{ p: 0, pt: 1.5 }}>
+                <TabPanel value={0} sx={{ p: 0, pt: 1.5, minWidth: 0, maxWidth: '100%' }}>
                     {/* 应用详细信息 */}
-                    <Stack gap={2}>
+                    <Stack gap={2} sx={{ minWidth: 0, maxWidth: '100%' }}>
                         {/* 版本信息 */}
                         <Sheet variant="outlined" sx={{ p: 2, borderRadius: 'md' }}>
                             <Typography level="title-sm" sx={{ mb: 1 }}>{t('ui.versionInfo')}</Typography>
@@ -1235,6 +1383,20 @@ export default function AppDetail({ app }) {
                                 </Stack>
                             </Stack>
                         </Sheet>
+
+                        {!loading && (
+                            <AppScreenshots
+                                phoneGroup={phoneScreenshotGroup}
+                                ipadGroup={ipadScreenshotGroup}
+                                showGallery={loadAppScreenshotsEnabled || showScreenshotsOnce}
+                                onLoadOnce={() => setShowScreenshotsOnce(true)}
+                                title={t('ui.appScreenshots')}
+                                phoneTitle={t('ui.appScreenshotsPhone')}
+                                ipadTitle={t('ui.appScreenshotsIpad')}
+                                loadOnceLabel={t('ui.loadAppScreenshotsOnce')}
+                                emptyLabel={t('ui.noAppScreenshots')}
+                            />
+                        )}
 
                         {/* 支持信息 */}
                         <Sheet variant="outlined" sx={{ p: 2, borderRadius: 'md' }}>
